@@ -12,4 +12,8 @@ public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, Long
     List<WorkflowTask> findByInstanceIdOrderByIdAsc(Long instanceId);
 
     List<WorkflowTask> findByInstanceIdAndStatusOrderByIdAsc(Long instanceId, String status);
+
+    List<WorkflowTask> findByInstanceIdAndNodeIdOrderByIdAsc(Long instanceId, String nodeId);
+
+    List<WorkflowTask> findByInstanceIdAndNodeIdAndStatusOrderByIdAsc(Long instanceId, String nodeId, String status);
 }

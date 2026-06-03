@@ -13,8 +13,8 @@ function WorkflowInstance() {
   const [instance, setInstance] = useState(null);
   const [definition, setDefinition] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
-  const [comment, setComment] = useState('');
+  const [processingTaskId, setProcessingTaskId] = useState(null);
+  const [comments, setComments] = useState({});
 
   const id = params.id;
   const definitionId = params.definitionId;
@@ -65,15 +65,14 @@ function WorkflowInstance() {
     }
   };
 
-  const getCurrentNode = () => {
-    if (!instance?.pendingTasks?.length || !definition?.nodes) return null;
-    const pendingTask = instance.pendingTasks[0];
-    return definition.nodes.find(n => n.id === pendingTask.nodeId);
+  const getNodeByNodeId = (nodeId) => {
+    if (!definition?.nodes) return null;
+    return definition.nodes.find(n => n.id === nodeId);
   };
 
-  const getButtonConfig = () => {
-    const currentNode = getCurrentNode();
-    const props = currentNode?.properties || {};
+  const getButtonConfig = (nodeId) => {
+    const node = getNodeByNodeId(nodeId);
+    const props = node?.properties || {};
     const actionType = props.actionType || 'approval';
 
     switch (actionType) {
@@ -121,33 +120,52 @@ function WorkflowInstance() {
     }
   };
 
-  const handleTaskAction = async (action) => {
-    if (!instance?.pendingTasks?.length) return;
+  const getCountersignTypeLabel = (type) => {
+    switch (type) {
+      case 'veto': return '一票否决';
+      case 'majority': return '过半通过';
+      case 'all':
+      default: return '全部同意才通过';
+    }
+  };
 
-    const pendingTask = instance.pendingTasks[0];
-    const buttonConfig = getButtonConfig();
+  const handleTaskAction = async (task, action) => {
+    const buttonConfig = getButtonConfig(task.nodeId);
     const confirmMsg = action === 'approve' ? buttonConfig.confirmApprove : buttonConfig.confirmReject;
 
     if (!window.confirm(confirmMsg)) {
       return;
     }
 
-    setProcessing(true);
+    const comment = comments[task.id] || '';
+
+    setProcessingTaskId(task.id);
     try {
       const response = await workflowInstanceApi.completeTask(instance.id, {
-        taskId: pendingTask.id,
+        taskId: task.id,
         action,
         comment,
-        assignee: '当前用户',
+        assignee: task.assignee || '当前用户',
       });
       setInstance(response.data);
-      setComment('');
+      setComments(prev => {
+        const newComments = { ...prev };
+        delete newComments[task.id];
+        return newComments;
+      });
     } catch (error) {
       console.error('处理任务失败:', error);
       alert('处理失败: ' + (error.response?.data?.error || error.message));
     } finally {
-      setProcessing(false);
+      setProcessingTaskId(null);
     }
+  };
+
+  const handleCommentChange = (taskId, value) => {
+    setComments(prev => ({
+      ...prev,
+      [taskId]: value
+    }));
   };
 
   const formatDate = (dateString) => {
@@ -170,6 +188,25 @@ function WorkflowInstance() {
     return instance.logs.map((log) => log.nodeId);
   };
 
+  const getPendingTasksGrouped = () => {
+    if (!instance?.pendingTasks?.length) return {};
+    const groups = {};
+    instance.pendingTasks.forEach(task => {
+      if (!groups[task.nodeId]) {
+        groups[task.nodeId] = [];
+      }
+      groups[task.nodeId].push(task);
+    });
+    return groups;
+  };
+
+  const getCountersignProgress = (nodeId) => {
+    const allNodeTasks = (instance.tasks || []).filter(t => t.nodeId === nodeId);
+    const total = allNodeTasks.length;
+    const completed = allNodeTasks.filter(t => t.status === 'COMPLETED').length;
+    return { completed, total };
+  };
+
   if (loading) {
     return <div className="workflow-instance">加载中...</div>;
   }
@@ -178,8 +215,7 @@ function WorkflowInstance() {
     return <div className="workflow-instance">数据加载失败</div>;
   }
 
-  const pendingTask = instance.pendingTasks?.[0];
-  const buttonConfig = pendingTask ? getButtonConfig() : null;
+  const pendingTasksByNode = getPendingTasksGrouped();
 
   return (
     <div className="workflow-instance">
@@ -220,47 +256,83 @@ function WorkflowInstance() {
         </div>
 
         <div className="instance-side-panel">
-          {pendingTask && instance.status === 'RUNNING' && buttonConfig && (
+          {instance.status === 'RUNNING' && Object.keys(pendingTasksByNode).length > 0 && (
             <div className="task-panel">
               <h3>待办任务</h3>
-              <div className="task-card">
-                <div className="task-header">
-                  <span className="task-name">{pendingTask.nodeName}</span>
-                  <span className="badge badge-pending">待处理</span>
-                </div>
-                <div className="task-info">
-                  <div>创建时间: {formatDate(pendingTask.createdAt)}</div>
-                </div>
-                <div className="task-comment">
-                  <label>{buttonConfig.commentLabel}：</label>
-                  <textarea
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    placeholder={`请输入${buttonConfig.commentLabel}（可选）`}
-                    rows={3}
-                  />
-                </div>
-                <div className="task-actions">
-                  {buttonConfig.showApprove && (
-                    <button
-                      className="btn btn-success"
-                      onClick={() => handleTaskAction('approve')}
-                      disabled={processing}
-                    >
-                      {processing ? '处理中...' : `✓ ${buttonConfig.approveText}`}
-                    </button>
-                  )}
-                  {buttonConfig.showReject && (
-                    <button
-                      className="btn btn-danger"
-                      onClick={() => handleTaskAction('reject')}
-                      disabled={processing}
-                    >
-                      {processing ? '处理中...' : `✕ ${buttonConfig.rejectText}`}
-                    </button>
-                  )}
-                </div>
-              </div>
+              {Object.entries(pendingTasksByNode).map(([nodeId, tasks]) => {
+                const node = getNodeByNodeId(nodeId);
+                const buttonConfig = getButtonConfig(nodeId);
+                const isCountersign = node?.type === 'countersign';
+                const countersignType = node?.properties?.countersignType || 'all';
+
+                return (
+                  <div key={nodeId} className="countersign-group">
+                    {isCountersign && (
+                      <div className="countersign-header">
+                        <div className="countersign-title">
+                          <span className="countersign-icon">👥</span>
+                          <span>{node?.name}（会签）</span>
+                        </div>
+                        <div className="countersign-rule">
+                          规则：{getCountersignTypeLabel(countersignType)}
+                        </div>
+                        <div className="countersign-progress">
+                          进度：{getCountersignProgress(nodeId).completed} / {getCountersignProgress(nodeId).total} 人已审批
+                        </div>
+                      </div>
+                    )}
+                    {tasks.map(task => (
+                      <div key={task.id} className="task-card">
+                        <div className="task-header">
+                          <span className="task-name">
+                            {task.assignee ? `${task.assignee} - ` : ''}
+                            {task.nodeName}
+                          </span>
+                          <span className="badge badge-pending">待处理</span>
+                        </div>
+                        <div className="task-info">
+                          <div>创建时间: {formatDate(task.createdAt)}</div>
+                          {task.assignee && <div>审批人: {task.assignee}</div>}
+                        </div>
+                        {node?.properties?.description && (
+                          <div className="task-description">
+                            {node.properties.description}
+                          </div>
+                        )}
+                        <div className="task-comment">
+                          <label>{buttonConfig.commentLabel}：</label>
+                          <textarea
+                            value={comments[task.id] || ''}
+                            onChange={(e) => handleCommentChange(task.id, e.target.value)}
+                            placeholder={`请输入${buttonConfig.commentLabel}（可选）`}
+                            rows={3}
+                          />
+                        </div>
+                        <div className="task-actions">
+                          {buttonConfig.showApprove && (
+                            <button
+                              className="btn btn-success"
+                              onClick={() => handleTaskAction(task, 'approve')}
+                              disabled={processingTaskId === task.id}
+                            >
+                              {processingTaskId === task.id ? '处理中...' : `✓ ${buttonConfig.approveText}`}
+                            </button>
+                          )}
+                          {buttonConfig.showReject && (
+                            <button
+                              className="btn btn-danger"
+                              onClick={() => handleTaskAction(task, 'reject')}
+                              disabled={processingTaskId === task.id}
+                            >
+                              {processingTaskId === task.id ? '处理中...' : `✕ ${buttonConfig.rejectText}`}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -305,13 +377,14 @@ function WorkflowInstance() {
               {instance.tasks?.map((task) => (
                 <div key={task.id} className="task-item">
                   <div className="task-item-header">
-                    <span>{task.nodeName}</span>
+                    <span>{task.assignee ? `${task.assignee} - ` : ''}{task.nodeName}</span>
                     <span
                       className={`badge ${
-                        task.status === 'COMPLETED' ? 'badge-completed' : 'badge-pending'
+                        task.status === 'COMPLETED' ? 'badge-completed' :
+                        task.status === 'CANCELLED' ? 'badge-default' : 'badge-pending'
                       }`}
                     >
-                      {task.status === 'COMPLETED' ? '已完成' : '待处理'}
+                      {task.status === 'COMPLETED' ? '已完成' : task.status === 'CANCELLED' ? '已取消' : '待处理'}
                     </span>
                   </div>
                   <div className="task-item-meta">

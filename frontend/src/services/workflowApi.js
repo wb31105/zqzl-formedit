@@ -24,6 +24,7 @@ export const workflowInstanceApi = {
 export const NODE_TYPES = [
   { type: 'start', name: '开始节点', icon: '▶', color: '#52c41a', canDelete: false },
   { type: 'approval', name: '审批节点', icon: '✓', color: '#1890ff', canDelete: true },
+  { type: 'countersign', name: '会签节点', icon: '👥', color: '#13c2c2', canDelete: true },
   { type: 'condition', name: '条件分支', icon: '◆', color: '#fa8c16', canDelete: true },
   { type: 'auto', name: '自动任务', icon: '⚙', color: '#722ed1', canDelete: true },
   { type: 'end', name: '结束节点', icon: '■', color: '#f5222d', canDelete: false },

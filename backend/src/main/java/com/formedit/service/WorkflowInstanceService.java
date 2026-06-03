@@ -111,9 +111,6 @@ public class WorkflowInstanceService {
         task.setCompletedAt(LocalDateTime.now());
         taskRepository.save(task);
 
-        addExecutionLog(instanceId, task.getNodeId(), task.getNodeName(), "approval",
-                "approve".equals(action) ? "批准" : "拒绝", comment);
-
         WorkflowDefinitionDto definition = definitionService.getDefinitionDtoById(instance.getDefinitionId());
 
         WorkflowDefinitionDto.Node currentNode = definition.getNodes().stream()
@@ -121,9 +118,161 @@ public class WorkflowInstanceService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("节点不存在"));
 
-        proceedToNextNode(instance, definition, currentNode, action);
+        if ("countersign".equals(currentNode.getType())) {
+            addExecutionLog(instanceId, task.getNodeId(), task.getNodeName(), "countersign",
+                    "approve".equals(action) ? "批准" : "拒绝",
+                    (assignee != null ? assignee : "系统管理员") + ": " + comment);
+
+            String countersignType = "all";
+            Map<String, Object> csProps = currentNode.getProperties();
+            if (csProps != null && csProps.get("countersignType") != null) {
+                countersignType = csProps.get("countersignType").toString();
+            }
+
+            boolean shouldFinalize = false;
+            String countersignResult = null;
+
+            if ("veto".equals(countersignType) && "reject".equals(action)) {
+                shouldFinalize = true;
+                countersignResult = "reject";
+            } else if ("all".equals(countersignType) && "reject".equals(action)) {
+                shouldFinalize = true;
+                countersignResult = "reject";
+            }
+
+            List<WorkflowTask> pendingTasks = taskRepository.findByInstanceIdAndNodeIdAndStatusOrderByIdAsc(instanceId, currentNode.getId(), "PENDING");
+            List<WorkflowTask> allNodeTasks = taskRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instanceId, currentNode.getId());
+            long totalApprovers = allNodeTasks.size();
+            List<WorkflowExecutionLog> nodeLogs = executionLogRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instanceId, currentNode.getId());
+
+            long approveCount = 0;
+            long rejectCount = 0;
+            for (WorkflowTask t : allNodeTasks) {
+                if ("COMPLETED".equals(t.getStatus()) && t.getAssignee() != null) {
+                    boolean approved = false;
+                    for (WorkflowExecutionLog log : nodeLogs) {
+                        if (log.getComment() != null && log.getComment().startsWith(t.getAssignee() + ":")) {
+                            if ("批准".equals(log.getAction())) {
+                                approved = true;
+                            }
+                            break;
+                        }
+                    }
+                    if (approved) {
+                        approveCount++;
+                    } else {
+                        rejectCount++;
+                    }
+                }
+            }
+            long completedCount = approveCount + rejectCount;
+
+            if ("majority".equals(countersignType) && pendingTasks != null && !pendingTasks.isEmpty()) {
+                long remainingPending = pendingTasks.size();
+                if (approveCount > totalApprovers / 2) {
+                    shouldFinalize = true;
+                    countersignResult = "approve";
+                } else if (approveCount + remainingPending <= totalApprovers / 2) {
+                    shouldFinalize = true;
+                    countersignResult = "reject";
+                }
+            }
+
+            if (shouldFinalize) {
+                for (WorkflowTask pendingTask : pendingTasks) {
+                    pendingTask.setStatus("CANCELLED");
+                    pendingTask.setComment("会签已结束，任务自动取消");
+                    pendingTask.setCompletedAt(LocalDateTime.now());
+                    taskRepository.save(pendingTask);
+                }
+                addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
+                        "会签结果: " + ("approve".equals(countersignResult) ? "通过" : "拒绝"), null);
+                proceedToNextNode(instance, definition, currentNode, countersignResult);
+            } else if (pendingTasks.isEmpty()) {
+                countersignResult = evaluateCountersignResult(instance, currentNode);
+                addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
+                        "会签结果: " + ("approve".equals(countersignResult) ? "通过" : "拒绝"), null);
+                proceedToNextNode(instance, definition, currentNode, countersignResult);
+            } else {
+                addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
+                        "等待其他审批人...", "剩余 " + pendingTasks.size() + " 人未审批");
+            }
+        } else {
+            addExecutionLog(instanceId, task.getNodeId(), task.getNodeName(), "approval",
+                    "approve".equals(action) ? "批准" : "拒绝", comment);
+            proceedToNextNode(instance, definition, currentNode, action);
+        }
 
         return instance;
+    }
+
+    private String evaluateCountersignResult(WorkflowInstance instance, WorkflowDefinitionDto.Node countersignNode) {
+        List<WorkflowTask> allTasks = taskRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instance.getId(), countersignNode.getId());
+
+        List<WorkflowExecutionLog> nodeLogs = executionLogRepository.findByInstanceIdAndNodeIdOrderByIdAsc(
+                instance.getId(), countersignNode.getId());
+
+        long approveCount = 0;
+        long rejectCount = 0;
+
+        for (WorkflowTask task : allTasks) {
+            if ("COMPLETED".equals(task.getStatus())) {
+                boolean approved = false;
+                for (WorkflowExecutionLog log : nodeLogs) {
+                    if (log.getComment() != null && task.getAssignee() != null &&
+                            log.getComment().startsWith(task.getAssignee() + ":")) {
+                        if ("批准".equals(log.getAction())) {
+                            approved = true;
+                        }
+                        break;
+                    }
+                }
+                if (approved) {
+                    approveCount++;
+                } else {
+                    rejectCount++;
+                }
+            }
+        }
+
+        long totalCompleted = approveCount + rejectCount;
+
+        String countersignType = "all";
+        Map<String, Object> properties = countersignNode.getProperties();
+        if (properties != null && properties.get("countersignType") != null) {
+            countersignType = properties.get("countersignType").toString();
+        }
+
+        switch (countersignType) {
+            case "veto":
+                if (rejectCount > 0) {
+                    return "reject";
+                }
+                return "approve";
+            case "majority":
+                if (approveCount > totalCompleted / 2) {
+                    return "approve";
+                }
+                return "reject";
+            case "all":
+            default:
+                if (approveCount == totalCompleted && totalCompleted > 0) {
+                    return "approve";
+                }
+                return "reject";
+        }
+    }
+
+    private String getCountersignTypeDescription(String countersignType) {
+        switch (countersignType) {
+            case "veto":
+                return "一票否决";
+            case "majority":
+                return "过半通过";
+            case "all":
+            default:
+                return "全部同意才通过";
+        }
     }
 
     private void proceedToNextNode(WorkflowInstance instance, WorkflowDefinitionDto definition,
@@ -191,7 +340,7 @@ public class WorkflowInstanceService {
             }
         }
 
-        if ("approval".equals(currentNode.getType()) && outgoingEdges.size() > 1) {
+        if (("approval".equals(currentNode.getType()) || "countersign".equals(currentNode.getType())) && outgoingEdges.size() > 1) {
             if ("approve".equals(lastAction)) {
                 return outgoingEdges.stream()
                         .filter(e -> isApproveLabel(e.getLabel()))
@@ -249,10 +398,10 @@ public class WorkflowInstanceService {
     private String getLastApprovalAction(Long instanceId) {
         List<WorkflowExecutionLog> logs = executionLogRepository.findByInstanceIdOrderByIdDesc(instanceId);
         for (WorkflowExecutionLog log : logs) {
-            if ("approval".equals(log.getNodeType())) {
-                if ("批准".equals(log.getAction()) || "approve".equals(log.getAction())) {
+            if ("approval".equals(log.getNodeType()) || "countersign".equals(log.getNodeType())) {
+                if ("批准".equals(log.getAction()) || "approve".equals(log.getAction()) || "会签结果: 通过".equals(log.getAction())) {
                     return "approve";
-                } else if ("拒绝".equals(log.getAction()) || "reject".equals(log.getAction())) {
+                } else if ("拒绝".equals(log.getAction()) || "reject".equals(log.getAction()) || "会签结果: 拒绝".equals(log.getAction())) {
                     return "reject";
                 }
             }
@@ -378,8 +527,48 @@ public class WorkflowInstanceService {
                 task.setNodeId(node.getId());
                 task.setNodeName(node.getName());
                 task.setStatus("PENDING");
+                Map<String, Object> approvalProps = node.getProperties();
+                if (approvalProps != null && approvalProps.get("approver") != null) {
+                    task.setAssignee(approvalProps.get("approver").toString());
+                }
                 taskRepository.save(task);
                 addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(), "等待审批", null);
+                break;
+
+            case "countersign":
+                Map<String, Object> countersignProps = node.getProperties();
+                List<String> approvers = new ArrayList<>();
+                if (countersignProps != null && countersignProps.get("approvers") != null) {
+                    String approversStr = countersignProps.get("approvers").toString();
+                    if (!approversStr.trim().isEmpty()) {
+                        String[] approverArray = approversStr.split("[,，、;；\\s]+");
+                        for (String approver : approverArray) {
+                            if (!approver.trim().isEmpty()) {
+                                approvers.add(approver.trim());
+                            }
+                        }
+                    }
+                }
+                if (approvers.isEmpty()) {
+                    approvers.add("审批人1");
+                    approvers.add("审批人2");
+                }
+                for (String approver : approvers) {
+                    WorkflowTask csTask = new WorkflowTask();
+                    csTask.setInstanceId(instance.getId());
+                    csTask.setNodeId(node.getId());
+                    csTask.setNodeName(node.getName());
+                    csTask.setStatus("PENDING");
+                    csTask.setAssignee(approver);
+                    taskRepository.save(csTask);
+                }
+                String countersignType = "all";
+                if (countersignProps != null && countersignProps.get("countersignType") != null) {
+                    countersignType = countersignProps.get("countersignType").toString();
+                }
+                String typeDesc = getCountersignTypeDescription(countersignType);
+                addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(),
+                        "等待会签", "审批人: " + String.join(", ", approvers) + "，规则: " + typeDesc);
                 break;
 
             case "auto":

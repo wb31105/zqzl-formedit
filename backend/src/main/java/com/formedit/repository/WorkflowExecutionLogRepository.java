@@ -12,4 +12,6 @@ public interface WorkflowExecutionLogRepository extends JpaRepository<WorkflowEx
     List<WorkflowExecutionLog> findByInstanceIdOrderByIdAsc(Long instanceId);
 
     List<WorkflowExecutionLog> findByInstanceIdOrderByIdDesc(Long instanceId);
+
+    List<WorkflowExecutionLog> findByInstanceIdAndNodeIdOrderByIdAsc(Long instanceId, String nodeId);
 }

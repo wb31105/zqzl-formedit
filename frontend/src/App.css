@@ -1748,3 +1748,60 @@
   background: transparent;
   padding: 0;
 }
+
+.countersign-group {
+  margin-bottom: 16px;
+}
+
+.countersign-group:last-child {
+  margin-bottom: 0;
+}
+
+.countersign-header {
+  background: #e6fffb;
+  border: 1px solid #87e8de;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.countersign-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #13c2c2;
+  margin-bottom: 8px;
+}
+
+.countersign-icon {
+  font-size: 18px;
+}
+
+.countersign-rule,
+.countersign-progress {
+  font-size: 13px;
+  color: #595959;
+  margin-bottom: 4px;
+}
+
+.countersign-group .task-card {
+  background: #f0f7ff;
+  border: 1px solid #91d5ff;
+  margin-bottom: 12px;
+}
+
+.countersign-group .task-card:last-child {
+  margin-bottom: 0;
+}
+
+.task-description {
+  background: #fafafa;
+  border-left: 3px solid #1890ff;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 12px;
+  border-radius: 0 4px 4px 0;
+}

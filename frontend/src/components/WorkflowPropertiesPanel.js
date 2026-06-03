@@ -171,6 +171,82 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
         </>
       )}
 
+      {selectedNode.type === 'countersign' && (
+        <>
+          <div className="properties-section">
+            <label>审批人（多个，用逗号分隔）</label>
+            <input
+              type="text"
+              value={properties.approvers || ''}
+              onChange={(e) => handlePropertyChange('approvers', e.target.value)}
+              placeholder="如：张三,李四,王五"
+            />
+          </div>
+          <div className="properties-section">
+            <label>会签方式</label>
+            <select
+              value={properties.countersignType || 'all'}
+              onChange={(e) => handlePropertyChange('countersignType', e.target.value)}
+            >
+              <option value="all">全部同意才通过</option>
+              <option value="veto">一票否决</option>
+              <option value="majority">过半通过</option>
+            </select>
+          </div>
+          <div className="properties-section">
+            <label>操作类型</label>
+            <select
+              value={properties.actionType || 'approval'}
+              onChange={(e) => handlePropertyChange('actionType', e.target.value)}
+            >
+              <option value="approval">审批（批准/拒绝）</option>
+              <option value="review">审核（同意/退回）</option>
+              <option value="custom">自定义</option>
+            </select>
+          </div>
+          {properties.actionType === 'custom' && (
+            <>
+              <div className="properties-section">
+                <label>按钮1文本（批准）</label>
+                <input
+                  type="text"
+                  value={properties.approveText || '批准'}
+                  onChange={(e) => handlePropertyChange('approveText', e.target.value)}
+                  placeholder="如：同意、通过"
+                />
+              </div>
+              <div className="properties-section">
+                <label>按钮2文本（拒绝）</label>
+                <input
+                  type="text"
+                  value={properties.rejectText || '拒绝'}
+                  onChange={(e) => handlePropertyChange('rejectText', e.target.value)}
+                  placeholder="如：退回、驳回"
+                />
+              </div>
+            </>
+          )}
+          <div className="properties-section">
+            <label>意见框标题</label>
+            <input
+              type="text"
+              value={properties.commentLabel || ''}
+              onChange={(e) => handlePropertyChange('commentLabel', e.target.value)}
+              placeholder="如：会签意见（留空使用默认）"
+            />
+          </div>
+          <div className="properties-section">
+            <label>会签说明</label>
+            <textarea
+              value={properties.description || ''}
+              onChange={(e) => handlePropertyChange('description', e.target.value)}
+              placeholder="请输入会签说明"
+              rows={3}
+            />
+          </div>
+        </>
+      )}
+
       {selectedNode.type === 'condition' && (
         <>
           <div className="properties-section">
