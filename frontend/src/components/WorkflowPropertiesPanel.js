@@ -2,6 +2,11 @@ import { useState, useEffect } from 'react';
 import { getNodeTypeConfig } from '../services/workflowApi';
 import { formApi } from '../services/api';
 
+const BRANCH_TYPES = [
+  { value: 'approve', label: '批准路径' },
+  { value: 'reject', label: '拒绝路径' },
+];
+
 function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onUpdateNode, onUpdateEdge, onDeleteNode, onDeleteEdge, formId, setFormId, formName, setFormName }) {
   const workflowBoundFormId = formId;
   const [nodeName, setNodeName] = useState('');
@@ -18,9 +23,12 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
     }
   }, [selectedNode]);
 
+  const [edgeBranchType, setEdgeBranchType] = useState('');
+
   useEffect(() => {
     if (selectedEdge) {
       setEdgeLabel(selectedEdge.label || '');
+      setEdgeBranchType(selectedEdge.branchType || '');
     }
   }, [selectedEdge]);
 
@@ -121,6 +129,17 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
   if (selectedEdge) {
     const sourceNode = nodes.find(n => n.id === selectedEdge.source);
     const targetNode = nodes.find(n => n.id === selectedEdge.target);
+    const sourceNodeType = sourceNode?.type;
+    const needsBranchType = ['condition', 'approval', 'countersign'].includes(sourceNodeType);
+    const outgoingEdges = edges.filter(e => e.source === selectedEdge.source);
+    const hasMultipleOutgoing = outgoingEdges.length > 1;
+    const showBranchType = needsBranchType && hasMultipleOutgoing;
+
+    const handleBranchTypeChange = (e) => {
+      const value = e.target.value;
+      setEdgeBranchType(value);
+      onUpdateEdge({ ...selectedEdge, branchType: value });
+    };
 
     return (
       <div className="properties-panel">
@@ -133,15 +152,41 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
           <label>终点</label>
           <div className="properties-value">{targetNode?.name || selectedEdge.target}</div>
         </div>
+        {showBranchType && (
+          <div className="properties-section">
+            <label style={{ color: '#ff4d4f' }}>分支类型 *</label>
+            <select
+              value={edgeBranchType}
+              onChange={handleBranchTypeChange}
+              style={{
+                borderColor: !edgeBranchType ? '#ff4d4f' : undefined,
+                backgroundColor: !edgeBranchType ? '#fff2f0' : undefined
+              }}
+            >
+              <option value="">请选择分支类型</option>
+              {BRANCH_TYPES.map(bt => (
+                <option key={bt.value} value={bt.value}>{bt.label}</option>
+              ))}
+            </select>
+            {!edgeBranchType && (
+              <div style={{ color: '#ff4d4f', fontSize: '12px', marginTop: '4px' }}>
+                ⚠️ 必须选择分支类型才能保存
+              </div>
+            )}
+          </div>
+        )}
         <div className="properties-section">
-          <label>标签（可选）</label>
+          <label>标签（可选，仅显示用）</label>
           <input
             type="text"
             value={edgeLabel}
             onChange={(e) => setEdgeLabel(e.target.value)}
             onBlur={() => onUpdateEdge({ ...selectedEdge, label: edgeLabel })}
-            placeholder="如：是/否"
+            placeholder="如：经理通过/驳回给申请人"
           />
+          <div style={{ color: '#8c8c8c', fontSize: '12px', marginTop: '4px' }}>
+            标签仅供显示，不影响流程路由
+          </div>
         </div>
         <div className="properties-actions">
           <button className="btn btn-danger" onClick={() => onDeleteEdge(selectedEdge.id)}>

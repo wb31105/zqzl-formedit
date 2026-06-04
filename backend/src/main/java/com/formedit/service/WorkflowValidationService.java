@@ -89,45 +89,54 @@ public class WorkflowValidationService {
     private void validateConditionBranches(WorkflowDefinitionDto dto, WorkflowValidationResult result) {
         if (dto.getEdges() == null) return;
 
-        List<WorkflowDefinitionDto.Node> conditionNodes = dto.getNodes().stream()
-                .filter(n -> "condition".equals(n.getType()))
+        List<WorkflowDefinitionDto.Node> branchNodes = dto.getNodes().stream()
+                .filter(n -> "condition".equals(n.getType()) || "approval".equals(n.getType()) || "countersign".equals(n.getType()))
                 .collect(Collectors.toList());
 
-        for (WorkflowDefinitionDto.Node conditionNode : conditionNodes) {
+        for (WorkflowDefinitionDto.Node node : branchNodes) {
             List<WorkflowDefinitionDto.Edge> outgoingEdges = dto.getEdges().stream()
-                    .filter(e -> conditionNode.getId().equals(e.getSource()))
+                    .filter(e -> node.getId().equals(e.getSource()))
                     .collect(Collectors.toList());
 
-            if (outgoingEdges.size() < 2) {
-                result.addError("条件分支节点 \"" + conditionNode.getName() + "\" 必须有两条出边");
+            if (outgoingEdges.size() <= 1) {
                 continue;
             }
 
-            boolean hasApprovePath = outgoingEdges.stream().anyMatch(e -> isApproveLabel(e.getLabel()));
-            boolean hasRejectPath = outgoingEdges.stream().anyMatch(e -> isRejectLabel(e.getLabel()));
+            boolean hasApprovePath = outgoingEdges.stream().anyMatch(e -> "approve".equals(e.getBranchType()));
+            boolean hasRejectPath = outgoingEdges.stream().anyMatch(e -> "reject".equals(e.getBranchType()));
+            long approveCount = outgoingEdges.stream().filter(e -> "approve".equals(e.getBranchType())).count();
+            long rejectCount = outgoingEdges.stream().filter(e -> "reject".equals(e.getBranchType())).count();
 
-            if (!hasApprovePath || !hasRejectPath) {
-                result.addError("条件分支节点 \"" + conditionNode.getName() + "\" 必须有\"批准/同意/是\"和\"拒绝/退回/否\"两条路径，请设置出边标签");
+            String nodeTypeDesc = getNodeTypeDescription(node.getType());
+
+            for (WorkflowDefinitionDto.Edge edge : outgoingEdges) {
+                if (edge.getBranchType() == null || edge.getBranchType().trim().isEmpty()) {
+                    result.addError(nodeTypeDesc + " \"" + node.getName() + "\" 的出边必须设置分支类型（批准路径/拒绝路径）");
+                    break;
+                }
+                if (!"approve".equals(edge.getBranchType()) && !"reject".equals(edge.getBranchType())) {
+                    result.addError(nodeTypeDesc + " \"" + node.getName() + "\" 的出边分支类型无效，只能是\"批准路径\"或\"拒绝路径\"");
+                    break;
+                }
+            }
+
+            if (approveCount != 1 || rejectCount != 1) {
+                result.addError(nodeTypeDesc + " \"" + node.getName() + "\" 必须恰好有一条\"批准路径\"和一条\"拒绝路径\"，当前批准路径: " + approveCount + " 条, 拒绝路径: " + rejectCount + " 条");
             }
         }
     }
 
-    private boolean isApproveLabel(String label) {
-        if (label == null) return false;
-        String lowerLabel = label.toLowerCase();
-        return lowerLabel.contains("是") || lowerLabel.contains("yes") ||
-               lowerLabel.contains("批准") || lowerLabel.contains("同意") ||
-               lowerLabel.contains("通过") || lowerLabel.contains("ok") ||
-               lowerLabel.contains("true");
-    }
-
-    private boolean isRejectLabel(String label) {
-        if (label == null) return false;
-        String lowerLabel = label.toLowerCase();
-        return lowerLabel.contains("否") || lowerLabel.contains("no") ||
-               lowerLabel.contains("拒绝") || lowerLabel.contains("退回") ||
-               lowerLabel.contains("不通过") || lowerLabel.contains("驳回") ||
-               lowerLabel.contains("false");
+    private String getNodeTypeDescription(String nodeType) {
+        switch (nodeType) {
+            case "condition":
+                return "条件分支节点";
+            case "approval":
+                return "审批节点";
+            case "countersign":
+                return "会签节点";
+            default:
+                return "节点";
+        }
     }
 
     private void validateNodeConnections(WorkflowDefinitionDto dto, WorkflowValidationResult result) {

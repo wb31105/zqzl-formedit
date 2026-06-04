@@ -207,6 +207,15 @@ function WorkflowCanvas({
     );
   };
 
+  const getBranchTypeBadge = (branchType) => {
+    if (branchType === 'approve') {
+      return { text: '批准', color: '#52c41a', bg: '#f6ffed' };
+    } else if (branchType === 'reject') {
+      return { text: '拒绝', color: '#ff4d4f', bg: '#fff1f0' };
+    }
+    return null;
+  };
+
   const renderEdge = (edge) => {
     const sourceNode = nodes.find((n) => n.id === edge.source);
     const targetNode = nodes.find((n) => n.id === edge.target);
@@ -215,28 +224,29 @@ function WorkflowCanvas({
 
     const isSelected = selectedEdgeId === edge.id;
     const labelPos = getEdgeLabelPosition(sourceNode, targetNode);
+    const badge = getBranchTypeBadge(edge.branchType);
 
     return (
       <g key={edge.id}>
         <path
           d={getEdgePath(sourceNode, targetNode)}
           fill="none"
-          stroke={isSelected ? '#1890ff' : '#999'}
+          stroke={isSelected ? '#1890ff' : (badge ? badge.color : '#999')}
           strokeWidth={isSelected ? 3 : 2}
           className="workflow-edge"
           onClick={(e) => handleEdgeClick(e, edge.id)}
           markerEnd="url(#arrowhead)"
           style={{ cursor: readOnly ? 'default' : 'pointer' }}
         />
-        {edge.label && (
+        {(edge.label || badge) && (
           <g>
             <rect
-              x={labelPos.x - 20}
+              x={labelPos.x - 35}
               y={labelPos.y - 12}
-              width="40"
+              width="70"
               height="20"
-              fill="white"
-              stroke="#ddd"
+              fill={badge ? badge.bg : 'white'}
+              stroke={badge ? badge.color : '#ddd'}
               rx="4"
             />
             <text
@@ -244,9 +254,9 @@ function WorkflowCanvas({
               y={labelPos.y + 2}
               textAnchor="middle"
               fontSize="12"
-              fill="#666"
+              fill={badge ? badge.color : '#666'}
             >
-              {edge.label}
+              {edge.label || (badge ? badge.text : '')}
             </text>
           </g>
         )}

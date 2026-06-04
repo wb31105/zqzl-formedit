@@ -181,6 +181,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge3.setSource("node-condition");
         edge3.setTarget("node-approved");
         edge3.setLabel("是");
+        edge3.setBranchType("approve");
         edges.add(edge3);
 
         WorkflowDefinitionDto.Edge edge4 = new WorkflowDefinitionDto.Edge();
@@ -188,6 +189,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge4.setSource("node-condition");
         edge4.setTarget("node-rejected");
         edge4.setLabel("否");
+        edge4.setBranchType("reject");
         edges.add(edge4);
 
         WorkflowDefinitionDto.Edge edge5 = new WorkflowDefinitionDto.Edge();
@@ -413,6 +415,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge4.setSource("node-dept-condition");
         edge4.setTarget("node-employee-submit");
         edge4.setLabel("退回");
+        edge4.setBranchType("reject");
         edges.add(edge4);
 
         WorkflowDefinitionDto.Edge edge5 = new WorkflowDefinitionDto.Edge();
@@ -420,6 +423,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge5.setSource("node-dept-condition");
         edge5.setTarget("node-manager");
         edge5.setLabel("批准");
+        edge5.setBranchType("approve");
         edges.add(edge5);
 
         WorkflowDefinitionDto.Edge edge6 = new WorkflowDefinitionDto.Edge();
@@ -433,6 +437,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge7.setSource("node-manager-condition");
         edge7.setTarget("node-dept-manager");
         edge7.setLabel("退回");
+        edge7.setBranchType("reject");
         edges.add(edge7);
 
         WorkflowDefinitionDto.Edge edge8 = new WorkflowDefinitionDto.Edge();
@@ -440,6 +445,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge8.setSource("node-manager-condition");
         edge8.setTarget("node-notification");
         edge8.setLabel("批准");
+        edge8.setBranchType("approve");
         edges.add(edge8);
 
         WorkflowDefinitionDto.Edge edge9 = new WorkflowDefinitionDto.Edge();
@@ -554,6 +560,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge4.setSource("node-condition");
         edge4.setTarget("node-approved");
         edge4.setLabel("通过");
+        edge4.setBranchType("approve");
         edges.add(edge4);
 
         WorkflowDefinitionDto.Edge edge5 = new WorkflowDefinitionDto.Edge();
@@ -561,6 +568,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge5.setSource("node-condition");
         edge5.setTarget("node-rejected");
         edge5.setLabel("拒绝");
+        edge5.setBranchType("reject");
         edges.add(edge5);
 
         WorkflowDefinitionDto.Edge edge6 = new WorkflowDefinitionDto.Edge();
@@ -704,6 +712,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge4.setSource("node-tech-condition");
         edge4.setTarget("node-budget");
         edge4.setLabel("通过");
+        edge4.setBranchType("approve");
         edges.add(edge4);
 
         WorkflowDefinitionDto.Edge edge5 = new WorkflowDefinitionDto.Edge();
@@ -711,6 +720,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge5.setSource("node-tech-condition");
         edge5.setTarget("node-rejected");
         edge5.setLabel("否决");
+        edge5.setBranchType("reject");
         edges.add(edge5);
 
         WorkflowDefinitionDto.Edge edge6 = new WorkflowDefinitionDto.Edge();
@@ -718,6 +728,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge6.setSource("node-budget");
         edge6.setTarget("node-final");
         edge6.setLabel("通过");
+        edge6.setBranchType("approve");
         edges.add(edge6);
 
         WorkflowDefinitionDto.Edge edge7 = new WorkflowDefinitionDto.Edge();
@@ -725,6 +736,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge7.setSource("node-budget");
         edge7.setTarget("node-rejected");
         edge7.setLabel("拒绝");
+        edge7.setBranchType("reject");
         edges.add(edge7);
 
         WorkflowDefinitionDto.Edge edge8 = new WorkflowDefinitionDto.Edge();
@@ -837,6 +849,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge3.setSource("node-condition");
         edge3.setTarget("node-director");
         edge3.setLabel("是(>1000)");
+        edge3.setBranchType("approve");
         edges.add(edge3);
 
         WorkflowDefinitionDto.Edge edge4 = new WorkflowDefinitionDto.Edge();
@@ -844,6 +857,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge4.setSource("node-condition");
         edge4.setTarget("node-notify");
         edge4.setLabel("否(≤1000)");
+        edge4.setBranchType("reject");
         edges.add(edge4);
 
         WorkflowDefinitionDto.Edge edge5 = new WorkflowDefinitionDto.Edge();
@@ -944,6 +958,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge3.setSource("node-condition");
         edge3.setTarget("node-director");
         edge3.setLabel("是(>3天)");
+        edge3.setBranchType("approve");
         edges.add(edge3);
 
         WorkflowDefinitionDto.Edge edge4 = new WorkflowDefinitionDto.Edge();
@@ -951,6 +966,7 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge4.setSource("node-condition");
         edge4.setTarget("node-end");
         edge4.setLabel("否(≤3天)");
+        edge4.setBranchType("reject");
         edges.add(edge4);
 
         WorkflowDefinitionDto.Edge edge5 = new WorkflowDefinitionDto.Edge();

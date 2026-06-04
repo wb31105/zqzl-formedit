@@ -352,15 +352,15 @@ public class WorkflowInstanceService {
             return null;
         }
 
-        if ("condition".equals(currentNode.getType())) {
+        if ("condition".equals(currentNode.getType()) && outgoingEdges.size() > 1) {
             if ("approve".equals(lastAction)) {
                 return outgoingEdges.stream()
-                        .filter(e -> isApproveLabel(e.getLabel()))
+                        .filter(e -> "approve".equals(e.getBranchType()))
                         .findFirst()
                         .orElse(outgoingEdges.get(0));
             } else {
                 return outgoingEdges.stream()
-                        .filter(e -> isRejectLabel(e.getLabel()))
+                        .filter(e -> "reject".equals(e.getBranchType()))
                         .findFirst()
                         .orElse(outgoingEdges.size() > 1 ? outgoingEdges.get(1) : outgoingEdges.get(0));
             }
@@ -369,36 +369,18 @@ public class WorkflowInstanceService {
         if (("approval".equals(currentNode.getType()) || "countersign".equals(currentNode.getType())) && outgoingEdges.size() > 1) {
             if ("approve".equals(lastAction)) {
                 return outgoingEdges.stream()
-                        .filter(e -> isApproveLabel(e.getLabel()))
+                        .filter(e -> "approve".equals(e.getBranchType()))
                         .findFirst()
                         .orElse(outgoingEdges.get(0));
             } else {
                 return outgoingEdges.stream()
-                        .filter(e -> isRejectLabel(e.getLabel()))
+                        .filter(e -> "reject".equals(e.getBranchType()))
                         .findFirst()
                         .orElse(outgoingEdges.size() > 1 ? outgoingEdges.get(1) : outgoingEdges.get(0));
             }
         }
 
         return outgoingEdges.get(0);
-    }
-
-    private boolean isApproveLabel(String label) {
-        if (label == null) return false;
-        String lowerLabel = label.toLowerCase();
-        return lowerLabel.equals("是") || lowerLabel.equals("yes") ||
-               lowerLabel.equals("批准") || lowerLabel.equals("同意") ||
-               lowerLabel.equals("通过") || lowerLabel.equals("ok") ||
-               lowerLabel.equals("true");
-    }
-
-    private boolean isRejectLabel(String label) {
-        if (label == null) return false;
-        String lowerLabel = label.toLowerCase();
-        return lowerLabel.equals("否") || lowerLabel.equals("no") ||
-               lowerLabel.equals("拒绝") || lowerLabel.equals("退回") ||
-               lowerLabel.equals("不通过") || lowerLabel.equals("驳回") ||
-               lowerLabel.equals("false");
     }
 
     private String resolveConditionExpression(WorkflowDefinitionDto.Node conditionNode, WorkflowInstance instance) {

@@ -40,5 +40,6 @@ public class WorkflowDefinitionDto {
         private String source;
         private String target;
         private String label;
+        private String branchType;
     }
 }
