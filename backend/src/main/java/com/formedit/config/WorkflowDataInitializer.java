@@ -2,9 +2,12 @@ package com.formedit.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.formedit.dto.WorkflowDefinitionDto;
+import com.formedit.entity.Form;
 import com.formedit.entity.WorkflowDefinition;
+import com.formedit.repository.FormRepository;
 import com.formedit.repository.WorkflowDefinitionRepository;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -14,14 +17,18 @@ import java.util.List;
 import java.util.Map;
 
 @Component
+@Order(2)
 public class WorkflowDataInitializer implements CommandLineRunner {
 
     private final WorkflowDefinitionRepository definitionRepository;
+    private final FormRepository formRepository;
     private final ObjectMapper objectMapper;
 
     public WorkflowDataInitializer(WorkflowDefinitionRepository definitionRepository,
+                                    FormRepository formRepository,
                                     ObjectMapper objectMapper) {
         this.definitionRepository = definitionRepository;
+        this.formRepository = formRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -34,7 +41,21 @@ public class WorkflowDataInitializer implements CommandLineRunner {
             WorkflowDefinition leaveApprovalFlow = createLeaveApprovalFlow();
             WorkflowDefinition countersignFlow = createCountersignApprovalFlow();
             WorkflowDefinition complexCountersignFlow = createComplexCountersignFlow();
-            definitionRepository.saveAll(Arrays.asList(simpleFlow, conditionFlow, multiStepFlow, leaveApprovalFlow, countersignFlow, complexCountersignFlow));
+            WorkflowDefinition expenseWithFormFlow = createExpenseReimbursementWithFormFlow();
+            WorkflowDefinition leaveWithFormFlow = createLeaveApprovalWithFormFlow();
+
+            Form expenseForm = formRepository.findByName("报销申请单").orElse(null);
+            if (expenseForm != null) {
+                expenseWithFormFlow.setFormId(expenseForm.getId());
+                expenseWithFormFlow.setFormName(expenseForm.getName());
+            }
+            Form leaveForm = formRepository.findByName("请假申请单").orElse(null);
+            if (leaveForm != null) {
+                leaveWithFormFlow.setFormId(leaveForm.getId());
+                leaveWithFormFlow.setFormName(leaveForm.getName());
+            }
+
+            definitionRepository.saveAll(Arrays.asList(simpleFlow, conditionFlow, multiStepFlow, leaveApprovalFlow, countersignFlow, complexCountersignFlow, expenseWithFormFlow, leaveWithFormFlow));
         }
     }
 
@@ -717,6 +738,226 @@ public class WorkflowDataInitializer implements CommandLineRunner {
         edge9.setSource("node-rejected");
         edge9.setTarget("node-end");
         edges.add(edge9);
+
+        definition.setNodesJson(convertToJson(nodes));
+        definition.setEdgesJson(convertToJson(edges));
+        return definition;
+    }
+
+    private WorkflowDefinition createExpenseReimbursementWithFormFlow() {
+        WorkflowDefinition definition = new WorkflowDefinition();
+        definition.setName("费用报销审批（带表单）");
+        definition.setDescription("开始 → 提交报销 → 金额条件判断 → （>1000 总监审批 / ≤1000 直接通过）→ 结束");
+
+        List<WorkflowDefinitionDto.Node> nodes = new ArrayList<>();
+        List<WorkflowDefinitionDto.Edge> edges = new ArrayList<>();
+
+        WorkflowDefinitionDto.Node start = new WorkflowDefinitionDto.Node();
+        start.setId("node-start");
+        start.setType("start");
+        start.setName("开始");
+        start.setX(80);
+        start.setY(200);
+        nodes.add(start);
+
+        WorkflowDefinitionDto.Node submit = new WorkflowDefinitionDto.Node();
+        submit.setId("node-submit");
+        submit.setType("approval");
+        submit.setName("提交报销申请");
+        submit.setX(250);
+        submit.setY(200);
+        Map<String, Object> submitProps = new HashMap<>();
+        submitProps.put("actionType", "submit");
+        submitProps.put("approveText", "提交");
+        submitProps.put("commentLabel", "备注说明");
+        submitProps.put("approver", "报销人");
+        submitProps.put("description", "请填写报销单并提交");
+        submit.setProperties(submitProps);
+        nodes.add(submit);
+
+        WorkflowDefinitionDto.Node condition = new WorkflowDefinitionDto.Node();
+        condition.setId("node-condition");
+        condition.setType("condition");
+        condition.setName("金额判断");
+        condition.setX(420);
+        condition.setY(200);
+        Map<String, Object> conditionProps = new HashMap<>();
+        conditionProps.put("expression", "amount > 1000");
+        conditionProps.put("description", "报销金额大于 1000 元需要总监审批，否则直接通过");
+        condition.setProperties(conditionProps);
+        nodes.add(condition);
+
+        WorkflowDefinitionDto.Node directorApproval = new WorkflowDefinitionDto.Node();
+        directorApproval.setId("node-director");
+        directorApproval.setType("approval");
+        directorApproval.setName("总监审批");
+        directorApproval.setX(620);
+        directorApproval.setY(100);
+        Map<String, Object> directorProps = new HashMap<>();
+        directorProps.put("approver", "财务总监");
+        directorProps.put("commentLabel", "审批意见");
+        directorProps.put("description", "金额较大，需要总监审批");
+        directorApproval.setProperties(directorProps);
+        nodes.add(directorApproval);
+
+        WorkflowDefinitionDto.Node autoNotify = new WorkflowDefinitionDto.Node();
+        autoNotify.setId("node-notify");
+        autoNotify.setType("auto");
+        autoNotify.setName("发送审批结果");
+        autoNotify.setX(820);
+        autoNotify.setY(200);
+        Map<String, Object> notifyProps = new HashMap<>();
+        notifyProps.put("taskType", "notification");
+        notifyProps.put("description", "自动发送审批结果通知");
+        autoNotify.setProperties(notifyProps);
+        nodes.add(autoNotify);
+
+        WorkflowDefinitionDto.Node end = new WorkflowDefinitionDto.Node();
+        end.setId("node-end");
+        end.setType("end");
+        end.setName("结束");
+        end.setX(1000);
+        end.setY(200);
+        nodes.add(end);
+
+        WorkflowDefinitionDto.Edge edge1 = new WorkflowDefinitionDto.Edge();
+        edge1.setId("edge-1");
+        edge1.setSource("node-start");
+        edge1.setTarget("node-submit");
+        edges.add(edge1);
+
+        WorkflowDefinitionDto.Edge edge2 = new WorkflowDefinitionDto.Edge();
+        edge2.setId("edge-2");
+        edge2.setSource("node-submit");
+        edge2.setTarget("node-condition");
+        edges.add(edge2);
+
+        WorkflowDefinitionDto.Edge edge3 = new WorkflowDefinitionDto.Edge();
+        edge3.setId("edge-3");
+        edge3.setSource("node-condition");
+        edge3.setTarget("node-director");
+        edge3.setLabel("是(>1000)");
+        edges.add(edge3);
+
+        WorkflowDefinitionDto.Edge edge4 = new WorkflowDefinitionDto.Edge();
+        edge4.setId("edge-4");
+        edge4.setSource("node-condition");
+        edge4.setTarget("node-notify");
+        edge4.setLabel("否(≤1000)");
+        edges.add(edge4);
+
+        WorkflowDefinitionDto.Edge edge5 = new WorkflowDefinitionDto.Edge();
+        edge5.setId("edge-5");
+        edge5.setSource("node-director");
+        edge5.setTarget("node-notify");
+        edges.add(edge5);
+
+        WorkflowDefinitionDto.Edge edge6 = new WorkflowDefinitionDto.Edge();
+        edge6.setId("edge-6");
+        edge6.setSource("node-notify");
+        edge6.setTarget("node-end");
+        edges.add(edge6);
+
+        definition.setNodesJson(convertToJson(nodes));
+        definition.setEdgesJson(convertToJson(edges));
+        return definition;
+    }
+
+    private WorkflowDefinition createLeaveApprovalWithFormFlow() {
+        WorkflowDefinition definition = new WorkflowDefinition();
+        definition.setName("请假审批（带表单）");
+        definition.setDescription("开始 → 提交请假 → 天数条件判断 → （>3 天总监审批 / ≤3 天直接通过）→ 结束");
+
+        List<WorkflowDefinitionDto.Node> nodes = new ArrayList<>();
+        List<WorkflowDefinitionDto.Edge> edges = new ArrayList<>();
+
+        WorkflowDefinitionDto.Node start = new WorkflowDefinitionDto.Node();
+        start.setId("node-start");
+        start.setType("start");
+        start.setName("开始");
+        start.setX(80);
+        start.setY(200);
+        nodes.add(start);
+
+        WorkflowDefinitionDto.Node submit = new WorkflowDefinitionDto.Node();
+        submit.setId("node-submit");
+        submit.setType("approval");
+        submit.setName("提交请假申请");
+        submit.setX(250);
+        submit.setY(200);
+        Map<String, Object> submitProps = new HashMap<>();
+        submitProps.put("actionType", "submit");
+        submitProps.put("approveText", "提交");
+        submitProps.put("commentLabel", "备注说明");
+        submitProps.put("approver", "申请人");
+        submitProps.put("description", "请填写请假单并提交");
+        submit.setProperties(submitProps);
+        nodes.add(submit);
+
+        WorkflowDefinitionDto.Node condition = new WorkflowDefinitionDto.Node();
+        condition.setId("node-condition");
+        condition.setType("condition");
+        condition.setName("天数判断");
+        condition.setX(420);
+        condition.setY(200);
+        Map<String, Object> conditionProps = new HashMap<>();
+        conditionProps.put("expression", "days > 3");
+        conditionProps.put("description", "请假天数大于 3 天需要总监审批，否则直接通过");
+        condition.setProperties(conditionProps);
+        nodes.add(condition);
+
+        WorkflowDefinitionDto.Node directorApproval = new WorkflowDefinitionDto.Node();
+        directorApproval.setId("node-director");
+        directorApproval.setType("approval");
+        directorApproval.setName("总监审批");
+        directorApproval.setX(620);
+        directorApproval.setY(100);
+        Map<String, Object> directorProps = new HashMap<>();
+        directorProps.put("approver", "总监");
+        directorProps.put("commentLabel", "审批意见");
+        directorProps.put("description", "请假时间较长，需要总监审批");
+        directorApproval.setProperties(directorProps);
+        nodes.add(directorApproval);
+
+        WorkflowDefinitionDto.Node end = new WorkflowDefinitionDto.Node();
+        end.setId("node-end");
+        end.setType("end");
+        end.setName("结束");
+        end.setX(820);
+        end.setY(200);
+        nodes.add(end);
+
+        WorkflowDefinitionDto.Edge edge1 = new WorkflowDefinitionDto.Edge();
+        edge1.setId("edge-1");
+        edge1.setSource("node-start");
+        edge1.setTarget("node-submit");
+        edges.add(edge1);
+
+        WorkflowDefinitionDto.Edge edge2 = new WorkflowDefinitionDto.Edge();
+        edge2.setId("edge-2");
+        edge2.setSource("node-submit");
+        edge2.setTarget("node-condition");
+        edges.add(edge2);
+
+        WorkflowDefinitionDto.Edge edge3 = new WorkflowDefinitionDto.Edge();
+        edge3.setId("edge-3");
+        edge3.setSource("node-condition");
+        edge3.setTarget("node-director");
+        edge3.setLabel("是(>3天)");
+        edges.add(edge3);
+
+        WorkflowDefinitionDto.Edge edge4 = new WorkflowDefinitionDto.Edge();
+        edge4.setId("edge-4");
+        edge4.setSource("node-condition");
+        edge4.setTarget("node-end");
+        edge4.setLabel("否(≤3天)");
+        edges.add(edge4);
+
+        WorkflowDefinitionDto.Edge edge5 = new WorkflowDefinitionDto.Edge();
+        edge5.setId("edge-5");
+        edge5.setSource("node-director");
+        edge5.setTarget("node-end");
+        edges.add(edge5);
 
         definition.setNodesJson(convertToJson(nodes));
         definition.setEdgesJson(convertToJson(edges));

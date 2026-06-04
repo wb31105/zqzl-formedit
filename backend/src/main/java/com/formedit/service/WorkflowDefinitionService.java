@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.formedit.dto.WorkflowDefinitionDto;
 import com.formedit.dto.WorkflowValidationResult;
+import com.formedit.entity.Form;
 import com.formedit.entity.WorkflowDefinition;
+import com.formedit.repository.FormRepository;
 import com.formedit.repository.WorkflowDefinitionRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
@@ -20,13 +22,16 @@ public class WorkflowDefinitionService {
 
     private final WorkflowDefinitionRepository definitionRepository;
     private final WorkflowValidationService validationService;
+    private final FormRepository formRepository;
     private final ObjectMapper objectMapper;
 
     public WorkflowDefinitionService(WorkflowDefinitionRepository definitionRepository,
                                       WorkflowValidationService validationService,
+                                      FormRepository formRepository,
                                       ObjectMapper objectMapper) {
         this.definitionRepository = definitionRepository;
         this.validationService = validationService;
+        this.formRepository = formRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -59,6 +64,12 @@ public class WorkflowDefinitionService {
         BeanUtils.copyProperties(dto, definition);
         definition.setNodesJson(convertToJson(dto.getNodes()));
         definition.setEdgesJson(convertToJson(dto.getEdges()));
+        if (dto.getFormId() != null) {
+            Form form = formRepository.findById(dto.getFormId()).orElse(null);
+            if (form != null) {
+                definition.setFormName(form.getName());
+            }
+        }
         return definitionRepository.save(definition);
     }
 
@@ -78,6 +89,13 @@ public class WorkflowDefinitionService {
             definition.setDescription(dto.getDescription());
             definition.setNodesJson(convertToJson(dto.getNodes()));
             definition.setEdgesJson(convertToJson(dto.getEdges()));
+            definition.setFormId(dto.getFormId());
+            if (dto.getFormId() != null) {
+                Form form = formRepository.findById(dto.getFormId()).orElse(null);
+                definition.setFormName(form != null ? form.getName() : null);
+            } else {
+                definition.setFormName(null);
+            }
             return definitionRepository.save(definition);
         });
     }

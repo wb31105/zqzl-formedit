@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import WorkflowCanvas from '../components/WorkflowCanvas';
+import FieldRenderer from '../components/FieldRenderer';
+import { formApi } from '../services/api';
 import {
   workflowDefinitionApi,
   workflowInstanceApi,
@@ -15,6 +17,7 @@ function WorkflowInstance() {
   const [loading, setLoading] = useState(true);
   const [processingTaskId, setProcessingTaskId] = useState(null);
   const [comments, setComments] = useState({});
+  const [form, setForm] = useState(null);
 
   const id = params.id;
   const definitionId = params.definitionId;
@@ -49,6 +52,14 @@ function WorkflowInstance() {
       const response = await workflowInstanceApi.getInstanceById(id);
       setInstance(response.data);
       await loadDefinition(response.data.definitionId);
+      if (response.data.formId) {
+        try {
+          const formResponse = await formApi.getFormById(response.data.formId);
+          setForm(formResponse.data);
+        } catch (formError) {
+          console.error('加载表单详情失败:', formError);
+        }
+      }
     } catch (error) {
       console.error('加载实例失败:', error);
     } finally {
@@ -256,6 +267,67 @@ function WorkflowInstance() {
         </div>
 
         <div className="instance-side-panel">
+          {form && instance.formData && (
+            <div className="form-data-panel" style={{
+              backgroundColor: '#f0f5ff',
+              borderRadius: '8px',
+              padding: '16px',
+              marginBottom: '16px',
+              border: '1px solid #d6e4ff'
+            }}>
+              <h3 style={{ 
+                marginTop: 0, 
+                marginBottom: '12px',
+                color: '#1890ff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                📋 表单数据
+                <span style={{ 
+                  fontSize: '12px', 
+                  fontWeight: 'normal', 
+                  color: '#8c8c8c',
+                  marginLeft: 'auto'
+                }}>
+                  {form.name}
+                </span>
+              </h3>
+              <div className="form-data-grid" style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(24, 1fr)',
+                gap: '12px'
+              }}>
+                {form.fields?.map(field => (
+                  <div
+                    key={field.id}
+                    style={{
+                      gridColumn: `span ${field.span || 24}`,
+                      marginBottom: '8px'
+                    }}
+                    className="form-data-item"
+                  >
+                    <label style={{ 
+                      display: 'block', 
+                      marginBottom: '4px', 
+                      fontWeight: '500',
+                      color: '#595959',
+                      fontSize: '13px'
+                    }}>
+                      {field.label}
+                    </label>
+                    <FieldRenderer
+                      field={field}
+                      value={instance.formData[field.id]}
+                      onChange={() => {}}
+                      readOnly={true}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {instance.status === 'RUNNING' && Object.keys(pendingTasksByNode).length > 0 && (
             <div className="task-panel">
               <h3>待办任务</h3>

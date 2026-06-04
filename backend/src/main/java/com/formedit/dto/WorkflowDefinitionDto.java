@@ -16,6 +16,10 @@ public class WorkflowDefinitionDto {
 
     private String description;
 
+    private Long formId;
+
+    private String formName;
+
     private List<Node> nodes;
 
     private List<Edge> edges;

@@ -1,4 +1,4 @@
-function FieldRenderer({ field, value, onChange, errors = {}, disabled = false }) {
+function FieldRenderer({ field, value, onChange, errors = {}, disabled = false, readOnly = false }) {
   const hasError = !!errors[field.id];
 
   const handleChange = (e) => {
@@ -16,6 +16,33 @@ function FieldRenderer({ field, value, onChange, errors = {}, disabled = false }
       onChange(field.id, e.target.value);
     }
   };
+
+  const getDisplayValue = () => {
+    if (value === null || value === undefined || value === '') {
+      return '-';
+    }
+    if (field.type === 'select' || field.type === 'radio') {
+      const option = field.options?.find(opt => opt.value === value);
+      return option ? option.label : value;
+    }
+    if (field.type === 'checkbox') {
+      const values = Array.isArray(value) ? value : [];
+      const labels = values.map(v => {
+        const option = field.options?.find(opt => opt.value === v);
+        return option ? option.label : v;
+      });
+      return labels.length > 0 ? labels.join('、') : '-';
+    }
+    return String(value);
+  };
+
+  if (readOnly) {
+    return (
+      <div className="field-wrapper field-readonly">
+        <div className="field-readonly-value">{getDisplayValue()}</div>
+      </div>
+    );
+  }
 
   const renderField = () => {
     switch (field.type) {

@@ -42,6 +42,13 @@ public class FormController {
         return convertToPageResponse(formPage);
     }
 
+    @GetMapping("/list")
+    public List<FormResponse> getAllFormsList() {
+        return formService.getAllFormsList().stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<FormResponse> getFormById(@PathVariable Long id) {
         return formService.getFormById(id)

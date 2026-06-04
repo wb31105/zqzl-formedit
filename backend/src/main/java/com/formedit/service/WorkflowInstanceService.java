@@ -1,9 +1,13 @@
 package com.formedit.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.formedit.dto.WorkflowDefinitionDto;
+import com.formedit.entity.Form;
 import com.formedit.entity.WorkflowExecutionLog;
 import com.formedit.entity.WorkflowInstance;
 import com.formedit.entity.WorkflowTask;
+import com.formedit.repository.FormRepository;
 import com.formedit.repository.WorkflowExecutionLogRepository;
 import com.formedit.repository.WorkflowInstanceRepository;
 import com.formedit.repository.WorkflowTaskRepository;
@@ -23,15 +27,21 @@ public class WorkflowInstanceService {
     private final WorkflowTaskRepository taskRepository;
     private final WorkflowExecutionLogRepository executionLogRepository;
     private final WorkflowDefinitionService definitionService;
+    private final FormRepository formRepository;
+    private final ObjectMapper objectMapper;
 
     public WorkflowInstanceService(WorkflowInstanceRepository instanceRepository,
                                     WorkflowTaskRepository taskRepository,
                                     WorkflowExecutionLogRepository executionLogRepository,
-                                    WorkflowDefinitionService definitionService) {
+                                    WorkflowDefinitionService definitionService,
+                                    FormRepository formRepository,
+                                    ObjectMapper objectMapper) {
         this.instanceRepository = instanceRepository;
         this.taskRepository = taskRepository;
         this.executionLogRepository = executionLogRepository;
         this.definitionService = definitionService;
+        this.formRepository = formRepository;
+        this.objectMapper = objectMapper;
     }
 
     public Page<WorkflowInstance> getAllInstances(Pageable pageable) {
@@ -60,6 +70,11 @@ public class WorkflowInstanceService {
 
     @Transactional
     public WorkflowInstance startInstance(Long definitionId) {
+        return startInstance(definitionId, null, null);
+    }
+
+    @Transactional
+    public WorkflowInstance startInstance(Long definitionId, Long formId, Map<String, Object> formData) {
         WorkflowDefinitionDto definition = definitionService.getDefinitionDtoById(definitionId);
         if (definition == null) {
             throw new IllegalArgumentException("流程定义不存在");
@@ -69,6 +84,17 @@ public class WorkflowInstanceService {
         instance.setDefinitionId(definitionId);
         instance.setDefinitionName(definition.getName());
         instance.setStatus("RUNNING");
+
+        if (formId != null) {
+            Form form = formRepository.findById(formId)
+                    .orElseThrow(() -> new IllegalArgumentException("表单不存在"));
+            instance.setFormId(formId);
+            instance.setFormName(form.getName());
+            if (formData != null) {
+                instance.setFormDataJson(convertFormDataToJson(formData));
+            }
+        }
+
         instance = instanceRepository.save(instance);
 
         addExecutionLog(instance.getId(), "start", "开始", "start", "流程启动", null);
@@ -425,6 +451,20 @@ public class WorkflowInstanceService {
             }
         }
 
+        if (instance.getFormDataJson() != null && !instance.getFormDataJson().isEmpty()) {
+            Map<String, Object> formData = parseFormDataFromJson(instance.getFormDataJson());
+            for (Map.Entry<String, Object> entry : formData.entrySet()) {
+                context.put("form_" + entry.getKey(), entry.getValue());
+                context.put(entry.getKey(), entry.getValue());
+            }
+            if (instance.getFormId() != null) {
+                context.put("formId", instance.getFormId());
+            }
+            if (instance.getFormName() != null) {
+                context.put("formName", instance.getFormName());
+            }
+        }
+
         return context;
     }
 
@@ -432,70 +472,122 @@ public class WorkflowInstanceService {
         String expr = expression.toLowerCase().trim();
 
         for (Map.Entry<String, Object> entry : context.entrySet()) {
-            String key = entry.getKey();
+            String key = entry.getKey().toLowerCase();
             String value = entry.getValue() != null ? entry.getValue().toString() : "";
             expr = expr.replace("${" + key + "}", value);
             expr = expr.replace("{" + key + "}", value);
+            expr = expr.replaceAll("\\b" + key + "\\b", value);
         }
+
+        if (expr.contains("&&")) {
+            String[] parts = expr.split("&&");
+            for (String part : parts) {
+                if (!evaluateSingleExpression(part.trim())) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        if (expr.contains("||")) {
+            String[] parts = expr.split("\\|\\|");
+            for (String part : parts) {
+                if (evaluateSingleExpression(part.trim())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return evaluateSingleExpression(expr);
+    }
+
+    private String stripQuotes(String str) {
+        if (str == null) return "";
+        str = str.trim();
+        if ((str.startsWith("\"") && str.endsWith("\"")) || 
+            (str.startsWith("'") && str.endsWith("'"))) {
+            return str.substring(1, str.length() - 1);
+        }
+        return str;
+    }
+
+    private boolean evaluateSingleExpression(String expr) {
+        if (expr == null || expr.isEmpty()) {
+            return true;
+        }
+        expr = expr.trim();
 
         if (expr.contains(">=")) {
             String[] parts = expr.split(">=");
             if (parts.length == 2) {
+                String left = stripQuotes(parts[0].trim());
+                String right = stripQuotes(parts[1].trim());
                 try {
-                    double left = Double.parseDouble(parts[0].trim());
-                    double right = Double.parseDouble(parts[1].trim());
-                    return left >= right;
+                    double l = Double.parseDouble(left);
+                    double r = Double.parseDouble(right);
+                    return l >= r;
                 } catch (NumberFormatException e) {
-                    return parts[0].trim().compareTo(parts[1].trim()) >= 0;
+                    return left.compareTo(right) >= 0;
                 }
             }
         }
         if (expr.contains("<=")) {
             String[] parts = expr.split("<=");
             if (parts.length == 2) {
+                String left = stripQuotes(parts[0].trim());
+                String right = stripQuotes(parts[1].trim());
                 try {
-                    double left = Double.parseDouble(parts[0].trim());
-                    double right = Double.parseDouble(parts[1].trim());
-                    return left <= right;
+                    double l = Double.parseDouble(left);
+                    double r = Double.parseDouble(right);
+                    return l <= r;
                 } catch (NumberFormatException e) {
-                    return parts[0].trim().compareTo(parts[1].trim()) <= 0;
+                    return left.compareTo(right) <= 0;
                 }
             }
         }
         if (expr.contains(">")) {
             String[] parts = expr.split(">");
             if (parts.length == 2) {
+                String left = stripQuotes(parts[0].trim());
+                String right = stripQuotes(parts[1].trim());
                 try {
-                    double left = Double.parseDouble(parts[0].trim());
-                    double right = Double.parseDouble(parts[1].trim());
-                    return left > right;
+                    double l = Double.parseDouble(left);
+                    double r = Double.parseDouble(right);
+                    return l > r;
                 } catch (NumberFormatException e) {
-                    return parts[0].trim().compareTo(parts[1].trim()) > 0;
+                    return left.compareTo(right) > 0;
                 }
             }
         }
         if (expr.contains("<")) {
             String[] parts = expr.split("<");
             if (parts.length == 2) {
+                String left = stripQuotes(parts[0].trim());
+                String right = stripQuotes(parts[1].trim());
                 try {
-                    double left = Double.parseDouble(parts[0].trim());
-                    double right = Double.parseDouble(parts[1].trim());
-                    return left < right;
+                    double l = Double.parseDouble(left);
+                    double r = Double.parseDouble(right);
+                    return l < r;
                 } catch (NumberFormatException e) {
-                    return parts[0].trim().compareTo(parts[1].trim()) < 0;
+                    return left.compareTo(right) < 0;
                 }
             }
         }
         if (expr.contains("==")) {
             String[] parts = expr.split("==");
             if (parts.length == 2) {
-                return parts[0].trim().equals(parts[1].trim());
+                String left = stripQuotes(parts[0].trim());
+                String right = stripQuotes(parts[1].trim());
+                return left.equals(right);
             }
         }
         if (expr.contains("!=")) {
             String[] parts = expr.split("!=");
             if (parts.length == 2) {
-                return !parts[0].trim().equals(parts[1].trim());
+                String left = stripQuotes(parts[0].trim());
+                String right = stripQuotes(parts[1].trim());
+                return !left.equals(right);
             }
         }
 
@@ -616,5 +708,34 @@ public class WorkflowInstanceService {
             return true;
         }
         return false;
+    }
+
+    public Map<String, Object> getInstanceFormData(Long instanceId) {
+        return instanceRepository.findById(instanceId)
+                .map(instance -> {
+                    if (instance.getFormDataJson() == null || instance.getFormDataJson().isEmpty()) {
+                        return new HashMap<String, Object>();
+                    }
+                    return parseFormDataFromJson(instance.getFormDataJson());
+                })
+                .orElse(new HashMap<>());
+    }
+
+    private String convertFormDataToJson(Map<String, Object> formData) {
+        if (formData == null) return null;
+        try {
+            return objectMapper.writeValueAsString(formData);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    private Map<String, Object> parseFormDataFromJson(String json) {
+        if (json == null || json.isEmpty()) return new HashMap<>();
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            return new HashMap<>();
+        }
     }
 }

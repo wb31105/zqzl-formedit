@@ -4,7 +4,9 @@ import { v4 as uuidv4 } from 'uuid';
 import NodeLibrary from '../components/NodeLibrary';
 import WorkflowCanvas from '../components/WorkflowCanvas';
 import WorkflowPropertiesPanel from '../components/WorkflowPropertiesPanel';
-import { workflowDefinitionApi, getNodeTypeConfig } from '../services/workflowApi';
+import FieldRenderer from '../components/FieldRenderer';
+import { workflowDefinitionApi, workflowInstanceApi, getNodeTypeConfig } from '../services/workflowApi';
+import { formApi } from '../services/api';
 
 function WorkflowEditor() {
   const { id } = useParams();
@@ -14,6 +16,8 @@ function WorkflowEditor() {
   const [currentDefinitionId, setCurrentDefinitionId] = useState(hasPersistedId ? id : null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [formId, setFormId] = useState(null);
+  const [formName, setFormName] = useState('');
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -25,6 +29,12 @@ function WorkflowEditor() {
   const [isNewFlag, setIsNewFlag] = useState(id === 'new');
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedEdge, setSelectedEdge] = useState(null);
+
+  const [showStartModal, setShowStartModal] = useState(false);
+  const [selectedStartForm, setSelectedStartForm] = useState(null);
+  const [startFormData, setStartFormData] = useState({});
+  const [startFormErrors, setStartFormErrors] = useState({});
+  const [startingInstance, setStartingInstance] = useState(false);
 
   useEffect(() => {
     if (id && id !== 'new') {
@@ -102,6 +112,8 @@ function WorkflowEditor() {
       const data = response.data;
       setName(data.name || '');
       setDescription(data.description || '');
+      setFormId(data.formId || null);
+      setFormName(data.formName || '');
       setNodes(data.nodes || []);
       setEdges(data.edges || []);
       setCurrentDefinitionId(data.id);
@@ -214,7 +226,7 @@ function WorkflowEditor() {
 
     setSaving(true);
     try {
-      const data = { name, description, nodes, edges };
+      const data = { name, description, formId, nodes, edges };
 
       if (isNewFlag && !currentDefinitionId) {
         const response = await workflowDefinitionApi.createDefinition(data);
@@ -242,9 +254,93 @@ function WorkflowEditor() {
     }
   };
 
-  const handleStartInstance = () => {
+  const handleStartInstance = async () => {
     if (canPreviewOrStart) {
-      navigate(`/workflow/instance/new/${currentDefinitionId}`);
+      if (formId) {
+        try {
+          const response = await formApi.getFormById(formId);
+          setSelectedStartForm(response.data);
+          setStartFormData({});
+          setStartFormErrors({});
+          setShowStartModal(true);
+        } catch (error) {
+          console.error('加载表单失败:', error);
+          alert('加载表单失败');
+        }
+      } else {
+        if (window.confirm('此流程未绑定表单，是否直接启动？')) {
+          navigate(`/workflow/instance/new/${currentDefinitionId}`);
+        }
+      }
+    }
+  };
+
+  const handleStartFormFieldChange = (fieldId, value) => {
+    setStartFormData(prev => ({
+      ...prev,
+      [fieldId]: value
+    }));
+    if (startFormErrors[fieldId]) {
+      setStartFormErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[fieldId];
+        return newErrors;
+      });
+    }
+  };
+
+  const validateStartForm = () => {
+    if (!selectedStartForm) return true;
+    const errors = {};
+    selectedStartForm.fields?.forEach(field => {
+      const value = startFormData[field.id];
+      if (field.required) {
+        const isEmpty = value === null || value === undefined || value === '' || 
+          (Array.isArray(value) && value.length === 0);
+        if (isEmpty) {
+          errors[field.id] = `${field.label}不能为空`;
+        }
+      }
+    });
+    setStartFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const doStartInstance = async () => {
+    setStartingInstance(true);
+    try {
+      let response;
+      if (formId) {
+        response = await workflowInstanceApi.startInstanceWithForm(currentDefinitionId, {
+          formId,
+          formData: startFormData
+        });
+      } else {
+        response = await workflowInstanceApi.startInstance(currentDefinitionId);
+      }
+      const instanceId = response.data.id;
+      setShowStartModal(false);
+      navigate(`/workflow/instance/${instanceId}`);
+    } catch (error) {
+      console.error('启动流程失败:', error);
+      alert('启动失败: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setStartingInstance(false);
+    }
+  };
+
+  const handleConfirmStart = () => {
+    if (formId && selectedStartForm) {
+      if (!validateStartForm()) {
+        return;
+      }
+    }
+    doStartInstance();
+  };
+
+  const handleCloseStartModal = () => {
+    if (!startingInstance) {
+      setShowStartModal(false);
     }
   };
 
@@ -342,8 +438,114 @@ function WorkflowEditor() {
           onUpdateEdge={handleUpdateEdge}
           onDeleteNode={handleDeleteNode}
           onDeleteEdge={handleDeleteEdge}
+          formId={formId}
+          setFormId={setFormId}
+          formName={formName}
+          setFormName={setFormName}
         />
       </div>
+
+      {showStartModal && (
+        <div className="modal-overlay" onClick={handleCloseStartModal}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>启动流程 - 填写表单</h3>
+              <button className="modal-close" onClick={handleCloseStartModal} disabled={startingInstance}>×</button>
+            </div>
+            <div className="modal-body">
+              {selectedStartForm && (
+                <div className="form-preview-section">
+                  <h4 style={{ marginBottom: '16px', color: '#1890ff' }}>
+                    📝 {selectedStartForm.name}
+                  </h4>
+                  {selectedStartForm.description && (
+                    <p style={{ color: '#666', marginBottom: '16px' }}>
+                      {selectedStartForm.description}
+                    </p>
+                  )}
+                  <div className="form-fields-container" style={{ 
+                    maxHeight: '400px', 
+                    overflowY: 'auto',
+                    padding: '16px',
+                    backgroundColor: '#fafafa',
+                    borderRadius: '8px',
+                    border: '1px solid #e8e8e8'
+                  }}>
+                    <div className="form-render-grid" style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(24, 1fr)',
+                      gap: '16px'
+                    }}>
+                      {selectedStartForm.fields?.map(field => (
+                        <div
+                          key={field.id}
+                          style={{
+                            gridColumn: `span ${field.span || 24}`,
+                            marginBottom: '16px'
+                          }}
+                          className="form-item"
+                        >
+                          <label style={{ 
+                            display: 'block', 
+                            marginBottom: '8px', 
+                            fontWeight: '500',
+                            color: '#333'
+                          }}>
+                            {field.label}
+                            {field.required && <span style={{ color: '#f5222d', marginLeft: '4px' }}>*</span>}
+                          </label>
+                          <FieldRenderer
+                            field={field}
+                            value={startFormData[field.id]}
+                            onChange={handleStartFormFieldChange}
+                            errors={startFormErrors}
+                            disabled={startingInstance}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!selectedStartForm && (
+                <div style={{ 
+                  textAlign: 'center', 
+                  padding: '40px 20px', 
+                  color: '#999',
+                  backgroundColor: '#fafafa',
+                  borderRadius: '8px',
+                  border: '1px dashed #d9d9d9'
+                }}>
+                  请填写表单后再启动流程。
+                </div>
+              )}
+            </div>
+            <div className="modal-footer" style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '12px',
+              padding: '16px 20px',
+              borderTop: '1px solid #e8e8e8'
+            }}>
+              <button 
+                className="btn btn-default" 
+                onClick={handleCloseStartModal} 
+                disabled={startingInstance}
+              >
+                取消
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleConfirmStart}
+                disabled={startingInstance}
+              >
+                {startingInstance ? '启动中...' : '确定启动'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

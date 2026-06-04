@@ -17,6 +17,7 @@ export const workflowInstanceApi = {
   getInstanceTasks: (id) => api.get(`/workflow-instances/${id}/tasks`),
   getPendingTasks: (id) => api.get(`/workflow-instances/${id}/pending-tasks`),
   startInstance: (definitionId) => api.post(`/workflow-instances/start/${definitionId}`),
+  startInstanceWithForm: (definitionId, data) => api.post(`/workflow-instances/start-with-form/${definitionId}`, data),
   completeTask: (instanceId, data) => api.post(`/workflow-instances/${instanceId}/complete-task`, data),
   deleteInstance: (id) => api.delete(`/workflow-instances/${id}`),
 };

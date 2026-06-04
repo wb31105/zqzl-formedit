@@ -26,6 +26,12 @@ public class WorkflowDefinition {
     @Column(columnDefinition = "TEXT")
     private String edgesJson;
 
+    @Column(name = "form_id")
+    private Long formId;
+
+    @Column(name = "form_name")
+    private String formName;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

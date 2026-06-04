@@ -29,6 +29,10 @@ public class FormService {
         return formRepository.findAllByOrderByIdDesc(pageable);
     }
 
+    public List<Form> getAllFormsList() {
+        return formRepository.findAllByOrderByIdDesc();
+    }
+
     public Page<Form> searchForms(String name, Pageable pageable) {
         if (name == null || name.trim().isEmpty()) {
             return formRepository.findAllByOrderByIdDesc(pageable);

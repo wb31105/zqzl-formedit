@@ -8,9 +8,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+
 @Repository
 public interface FormRepository extends JpaRepository<Form, Long> {
     Page<Form> findAllByOrderByIdDesc(Pageable pageable);
+
+    List<Form> findAllByOrderByIdDesc();
 
     @Query("SELECT f FROM Form f WHERE LOWER(f.name) LIKE LOWER(CONCAT('%', :name, '%')) ORDER BY f.id DESC")
     Page<Form> findByNameContaining(@Param("name") String name, Pageable pageable);
@@ -18,4 +22,6 @@ public interface FormRepository extends JpaRepository<Form, Long> {
     boolean existsByName(String name);
 
     boolean existsByNameAndIdNot(String name, Long id);
+
+    java.util.Optional<Form> findByName(String name);
 }

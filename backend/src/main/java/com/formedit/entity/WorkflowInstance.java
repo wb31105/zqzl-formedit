@@ -35,6 +35,15 @@ public class WorkflowInstance {
     @Column(name = "ended_at")
     private LocalDateTime endedAt;
 
+    @Column(name = "form_id")
+    private Long formId;
+
+    @Column(name = "form_name")
+    private String formName;
+
+    @Column(name = "form_data_json", columnDefinition = "TEXT")
+    private String formDataJson;
+
     @PrePersist
     protected void onCreate() {
         startedAt = LocalDateTime.now();

@@ -11,6 +11,7 @@ const api = axios.create({
 
 export const formApi = {
   getAllForms: (params) => api.get('/forms', { params }),
+  getFormsList: () => api.get('/forms/list'),
   getFormById: (id) => api.get(`/forms/${id}`),
   createForm: (data) => api.post('/forms', data),
   updateForm: (id, data) => api.put(`/forms/${id}`, data),

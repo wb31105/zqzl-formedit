@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
 import { getNodeTypeConfig } from '../services/workflowApi';
+import { formApi } from '../services/api';
 
-function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onUpdateNode, onUpdateEdge, onDeleteNode, onDeleteEdge }) {
+function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onUpdateNode, onUpdateEdge, onDeleteNode, onDeleteEdge, formId, setFormId, formName, setFormName }) {
+  const workflowBoundFormId = formId;
   const [nodeName, setNodeName] = useState('');
   const [edgeLabel, setEdgeLabel] = useState('');
   const [properties, setProperties] = useState({});
+  const [formsList, setFormsList] = useState([]);
+  const [selectedFormForFields, setSelectedFormForFields] = useState(null);
+  const [loadingForms, setLoadingForms] = useState(false);
 
   useEffect(() => {
     if (selectedNode) {
@@ -19,12 +24,95 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
     }
   }, [selectedEdge]);
 
+  useEffect(() => {
+    loadFormsList();
+  }, []);
+
+  useEffect(() => {
+    if (selectedNode?.type === 'condition') {
+      if (workflowBoundFormId) {
+        handleFormForFieldsSelect(workflowBoundFormId);
+      }
+    } else {
+      setSelectedFormForFields(null);
+    }
+  }, [selectedNode, workflowBoundFormId]);
+
+  const loadFormsList = async () => {
+    setLoadingForms(true);
+    try {
+      const response = await formApi.getFormsList();
+      setFormsList(response.data || []);
+    } catch (error) {
+      console.error('加载表单列表失败:', error);
+    } finally {
+      setLoadingForms(false);
+    }
+  };
+
+  const handleFormForFieldsSelect = async (formId) => {
+    setSelectedFormForFields(null);
+    if (formId) {
+      try {
+        const response = await formApi.getFormById(formId);
+        setSelectedFormForFields(response.data);
+      } catch (error) {
+        console.error('加载表单详情失败:', error);
+      }
+    }
+  };
+
+  const insertFieldToExpression = (fieldId) => {
+    const currentExpr = properties.expression || '';
+    const newExpr = currentExpr + fieldId;
+    handlePropertyChange('expression', newExpr);
+  };
+
+  const insertOperatorToExpression = (operator) => {
+    const currentExpr = properties.expression || '';
+    const newExpr = currentExpr + ' ' + operator + ' ';
+    handlePropertyChange('expression', newExpr);
+  };
+
+  const handleWorkflowFormSelect = (e) => {
+    const value = e.target.value;
+    if (value === '') {
+      setFormId(null);
+      setFormName('');
+    } else {
+      const form = formsList.find(f => f.id === Number(value));
+      setFormId(Number(value));
+      setFormName(form ? form.name : '');
+    }
+  };
+
   if (!selectedNode && !selectedEdge) {
     return (
       <div className="properties-panel">
-        <h3>属性面板</h3>
-        <div className="properties-empty">
-          <p>选择节点或连线以编辑属性</p>
+        <h3>流程属性</h3>
+        <div className="properties-section">
+          <label>绑定表单</label>
+          <select
+            value={formId || ''}
+            onChange={handleWorkflowFormSelect}
+            style={{ width: '100%' }}
+          >
+            <option value="">不绑定表单</option>
+            {formsList.map(form => (
+              <option key={form.id} value={form.id}>{form.name}</option>
+            ))}
+          </select>
+          {formId && (
+            <div className="properties-hint" style={{ marginTop: '8px', color: '#1890ff', fontSize: '13px' }}>
+              ✅ 已绑定：{formName}
+            </div>
+          )}
+          <div className="properties-hint" style={{ marginTop: '8px', fontSize: '12px', color: '#8c8c8c' }}>
+            绑定表单后，发起该流程时会自动显示此表单供填写
+          </div>
+        </div>
+        <div className="properties-section" style={{ marginTop: '20px', borderTop: '1px solid #e8e8e8', paddingTop: '20px' }}>
+          <p style={{ color: '#8c8c8c', fontSize: '13px' }}>💡 点击画布上的节点或连线可编辑其属性</p>
         </div>
       </div>
     );
@@ -256,8 +344,151 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
               value={properties.expression || ''}
               onChange={(e) => handlePropertyChange('expression', e.target.value)}
               placeholder="如：amount > 1000"
+              style={{ fontFamily: 'monospace' }}
             />
+            <div className="expression-hint" style={{ 
+              fontSize: '12px', 
+              color: '#8c8c8c', 
+              marginTop: '4px',
+              lineHeight: '1.8'
+            }}>
+              <strong>数字字段：</strong>直接写，如 <code>days &gt; 3</code><br/>
+              <strong>字符串字段：</strong>值要加引号，用下方显示的 value，如 <code>leaveType == "personal"</code><br/>
+              <strong>逻辑运算：</strong>支持 <code>&&</code>（且）和 <code>||</code>（或），如 <code>days &gt; 3 &amp;&amp; leaveType == "personal"</code><br/>
+              <strong>运算符：</strong>&gt;, &lt;, &gt;=, &lt;=, ==, !=
+            </div>
           </div>
+
+          <div className="properties-section">
+            <label>快捷运算符</label>
+            <div className="operator-buttons" style={{ 
+              display: 'flex', 
+              gap: '6px', 
+              flexWrap: 'wrap',
+              marginBottom: '8px'
+            }}>
+              {['>', '<', '>=', '<=', '==', '!=', '&&', '||'].map(op => (
+                <button
+                  key={op}
+                  type="button"
+                  className="btn btn-default"
+                  style={{ 
+                    padding: '4px 10px', 
+                    fontSize: '13px',
+                    fontFamily: 'monospace',
+                    minWidth: '40px'
+                  }}
+                  onClick={() => insertOperatorToExpression(op)}
+                >
+                  {op}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="properties-section">
+            <label>插入表单字段</label>
+            {workflowBoundFormId ? (
+              <>
+                <div style={{ 
+                  padding: '8px 12px', 
+                  backgroundColor: '#e6f7ff', 
+                  border: '1px solid #91d5ff', 
+                  borderRadius: '4px',
+                  marginBottom: '12px',
+                  fontSize: '13px',
+                  color: '#1890ff'
+                }}>
+                  ✅ 已绑定：{formName || selectedFormForFields?.name}
+                  <div style={{ fontSize: '12px', marginTop: '4px', color: '#8c8c8c' }}>
+                    流程已绑定表单，条件节点只能使用该表单的字段
+                  </div>
+                </div>
+              </>
+            ) : (
+              <select
+                className="select-input"
+                value={selectedFormForFields?.id || ''}
+                onChange={(e) => handleFormForFieldsSelect(e.target.value || null)}
+                disabled={loadingForms}
+                style={{ marginBottom: '12px' }}
+              >
+                <option value="">{loadingForms ? '加载中...' : '选择表单查看字段'}</option>
+                {formsList.map(form => (
+                  <option key={form.id} value={form.id}>{form.name}</option>
+                ))}
+              </select>
+            )}
+
+            {selectedFormForFields && (
+              <div className="form-fields-list" style={{
+                maxHeight: '300px',
+                overflowY: 'auto',
+                padding: '10px',
+                backgroundColor: '#fafafa',
+                borderRadius: '6px',
+                border: '1px solid #e8e8e8'
+              }}>
+                <div style={{ 
+                  fontSize: '12px', 
+                  color: '#8c8c8c', 
+                  marginBottom: '12px' 
+                }}>
+                  点击字段ID插入到表达式：
+                </div>
+                {selectedFormForFields.fields?.map(field => (
+                  <div key={field.id} style={{ marginBottom: '8px' }}>
+                    <div
+                      className="field-chip"
+                      onClick={() => insertFieldToExpression(field.id)}
+                      style={{
+                        display: 'inline-block',
+                        padding: '4px 10px',
+                        backgroundColor: '#e6f7ff',
+                        border: '1px solid #91d5ff',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = '#bae7ff';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = '#e6f7ff';
+                      }}
+                      title={`${field.label} (${field.type})`}
+                    >
+                      <span style={{ fontWeight: '500', color: '#1890ff' }}>{field.label}</span>
+                      <span style={{ color: '#8c8c8c', marginLeft: '4px', fontFamily: 'monospace' }}>
+                        {field.id}
+                      </span>
+                    </div>
+                    {(field.type === 'select' || field.type === 'radio') && field.options && (
+                      <div style={{ 
+                        marginTop: '4px', 
+                        marginLeft: '8px', 
+                        fontSize: '11px', 
+                        color: '#8c8c8c' 
+                      }}>
+                        可选值：{field.options.map(opt => 
+                          <code key={opt.value} style={{
+                            backgroundColor: '#f0f0f0',
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            marginRight: '5px',
+                            fontFamily: 'monospace'
+                          }}>"{opt.value}"</code>
+                        )}
+                        <span style={{ marginLeft: '5px' }}>({field.label}: {field.options.map(opt => opt.label).join('/')})</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="properties-section">
             <label>条件说明</label>
             <textarea

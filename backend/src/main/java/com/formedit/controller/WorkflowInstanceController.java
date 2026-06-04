@@ -1,6 +1,9 @@
 package com.formedit.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.formedit.dto.PageResponse;
+import com.formedit.dto.StartInstanceRequest;
 import com.formedit.dto.WorkflowTaskDto;
 import com.formedit.entity.WorkflowExecutionLog;
 import com.formedit.entity.WorkflowInstance;
@@ -23,9 +26,11 @@ import java.util.stream.Collectors;
 public class WorkflowInstanceController {
 
     private final WorkflowInstanceService instanceService;
+    private final ObjectMapper objectMapper;
 
-    public WorkflowInstanceController(WorkflowInstanceService instanceService) {
+    public WorkflowInstanceController(WorkflowInstanceService instanceService, ObjectMapper objectMapper) {
         this.instanceService = instanceService;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping
@@ -87,6 +92,25 @@ public class WorkflowInstanceController {
         }
     }
 
+    @PostMapping("/start-with-form/{definitionId}")
+    public ResponseEntity<?> startInstanceWithForm(@PathVariable Long definitionId,
+                                                    @Valid @RequestBody(required = false) StartInstanceRequest request) {
+        try {
+            Long formId = null;
+            Map<String, Object> formData = null;
+            if (request != null) {
+                formId = request.getFormId();
+                formData = request.getFormData();
+            }
+            WorkflowInstance instance = instanceService.startInstance(definitionId, formId, formData);
+            return ResponseEntity.ok(convertToDetailResponse(instance));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
     @PostMapping("/{instanceId}/complete-task")
     public ResponseEntity<?> completeTask(
             @PathVariable Long instanceId,
@@ -137,6 +161,9 @@ public class WorkflowInstanceController {
         response.put("currentNodeName", instance.getCurrentNodeName());
         response.put("startedAt", instance.getStartedAt());
         response.put("endedAt", instance.getEndedAt());
+        response.put("formId", instance.getFormId());
+        response.put("formName", instance.getFormName());
+        response.put("formData", parseFormDataFromJson(instance.getFormDataJson()));
         return response;
     }
 
@@ -146,5 +173,14 @@ public class WorkflowInstanceController {
         response.put("logs", instanceService.getExecutionLogs(instance.getId()));
         response.put("pendingTasks", instanceService.getPendingTasks(instance.getId()));
         return response;
+    }
+
+    private Map<String, Object> parseFormDataFromJson(String json) {
+        if (json == null || json.isEmpty()) return new HashMap<>();
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            return new HashMap<>();
+        }
     }
 }

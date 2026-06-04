@@ -115,19 +115,19 @@ public class WorkflowValidationService {
     private boolean isApproveLabel(String label) {
         if (label == null) return false;
         String lowerLabel = label.toLowerCase();
-        return lowerLabel.equals("是") || lowerLabel.equals("yes") ||
-               lowerLabel.equals("批准") || lowerLabel.equals("同意") ||
-               lowerLabel.equals("通过") || lowerLabel.equals("ok") ||
-               lowerLabel.equals("true");
+        return lowerLabel.contains("是") || lowerLabel.contains("yes") ||
+               lowerLabel.contains("批准") || lowerLabel.contains("同意") ||
+               lowerLabel.contains("通过") || lowerLabel.contains("ok") ||
+               lowerLabel.contains("true");
     }
 
     private boolean isRejectLabel(String label) {
         if (label == null) return false;
         String lowerLabel = label.toLowerCase();
-        return lowerLabel.equals("否") || lowerLabel.equals("no") ||
-               lowerLabel.equals("拒绝") || lowerLabel.equals("退回") ||
-               lowerLabel.equals("不通过") || lowerLabel.equals("驳回") ||
-               lowerLabel.equals("false");
+        return lowerLabel.contains("否") || lowerLabel.contains("no") ||
+               lowerLabel.contains("拒绝") || lowerLabel.contains("退回") ||
+               lowerLabel.contains("不通过") || lowerLabel.contains("驳回") ||
+               lowerLabel.contains("false");
     }
 
     private void validateNodeConnections(WorkflowDefinitionDto dto, WorkflowValidationResult result) {

@@ -5,12 +5,15 @@ com/formedit/service/WorkflowDefinitionService$2.class
 com/formedit/entity/Form.class
 com/formedit/repository/WorkflowDefinitionRepository.class
 com/formedit/dto/WorkflowTaskDto.class
+com/formedit/dto/StartInstanceRequest.class
 com/formedit/config/GlobalExceptionHandler.class
 com/formedit/repository/FormRepository.class
 com/formedit/FormEditApplication.class
+com/formedit/service/WorkflowInstanceService$1.class
 com/formedit/entity/WorkflowExecutionLog.class
 com/formedit/dto/WorkflowDefinitionDto$Node.class
 com/formedit/repository/WorkflowExecutionLogRepository.class
+com/formedit/controller/WorkflowInstanceController$1.class
 com/formedit/service/WorkflowInstanceService.class
 com/formedit/dto/ValidationResult.class
 com/formedit/repository/WorkflowInstanceRepository.class

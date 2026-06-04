@@ -6,6 +6,7 @@ import com.formedit.entity.FormField;
 import com.formedit.entity.Option;
 import com.formedit.repository.FormRepository;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.Arrays;
 import java.util.List;
 
 @Component
+@Order(1)
 public class DataInitializer implements CommandLineRunner {
     private final FormRepository formRepository;
     private final ObjectMapper objectMapper;
@@ -28,7 +30,9 @@ public class DataInitializer implements CommandLineRunner {
             Form form1 = createUserRegistrationForm();
             Form form2 = createSurveyForm();
             Form form3 = createContactForm();
-            formRepository.saveAll(Arrays.asList(form1, form2, form3));
+            Form form4 = createLeaveApplicationForm();
+            Form form5 = createExpenseReimbursementForm();
+            formRepository.saveAll(Arrays.asList(form1, form2, form3, form4, form5));
         }
     }
 
@@ -183,6 +187,169 @@ public class DataInitializer implements CommandLineRunner {
         message.setMinLength(10);
         message.setMaxLength(1000);
         fields.add(message);
+
+        form.setFieldsJson(convertToJson(fields));
+        return form;
+    }
+
+    private Form createLeaveApplicationForm() {
+        Form form = new Form();
+        form.setName("请假申请单");
+        form.setDescription("员工请假申请专用表单");
+
+        List<FormField> fields = new ArrayList<>();
+
+        FormField applicant = new FormField();
+        applicant.setId("applicant");
+        applicant.setType("text");
+        applicant.setLabel("申请人");
+        applicant.setPlaceholder("请输入申请人姓名");
+        applicant.setRequired(true);
+        applicant.setSpan(12);
+        fields.add(applicant);
+
+        FormField department = new FormField();
+        department.setId("department");
+        department.setType("text");
+        department.setLabel("所属部门");
+        department.setPlaceholder("请输入所属部门");
+        department.setRequired(true);
+        department.setSpan(12);
+        fields.add(department);
+
+        FormField leaveType = new FormField();
+        leaveType.setId("leaveType");
+        leaveType.setType("select");
+        leaveType.setLabel("请假类型");
+        leaveType.setPlaceholder("请选择请假类型");
+        leaveType.setRequired(true);
+        leaveType.setSpan(12);
+        leaveType.setOptions(Arrays.asList(
+                createOption("事假", "personal"),
+                createOption("病假", "sick"),
+                createOption("年假", "annual"),
+                createOption("婚假", "marriage"),
+                createOption("产假", "maternity"),
+                createOption("其他", "other")
+        ));
+        fields.add(leaveType);
+
+        FormField days = new FormField();
+        days.setId("days");
+        days.setType("number");
+        days.setLabel("请假天数");
+        days.setPlaceholder("请输入请假天数");
+        days.setRequired(true);
+        days.setSpan(12);
+        fields.add(days);
+
+        FormField startDate = new FormField();
+        startDate.setId("startDate");
+        startDate.setType("date");
+        startDate.setLabel("开始日期");
+        startDate.setRequired(true);
+        startDate.setSpan(12);
+        fields.add(startDate);
+
+        FormField endDate = new FormField();
+        endDate.setId("endDate");
+        endDate.setType("date");
+        endDate.setLabel("结束日期");
+        endDate.setRequired(true);
+        endDate.setSpan(12);
+        fields.add(endDate);
+
+        FormField reason = new FormField();
+        reason.setId("reason");
+        reason.setType("textarea");
+        reason.setLabel("请假理由");
+        reason.setPlaceholder("请详细说明请假理由");
+        reason.setRequired(true);
+        reason.setMinLength(5);
+        reason.setMaxLength(500);
+        fields.add(reason);
+
+        form.setFieldsJson(convertToJson(fields));
+        return form;
+    }
+
+    private Form createExpenseReimbursementForm() {
+        Form form = new Form();
+        form.setName("报销申请单");
+        form.setDescription("费用报销申请专用表单");
+
+        List<FormField> fields = new ArrayList<>();
+
+        FormField applicant = new FormField();
+        applicant.setId("applicant");
+        applicant.setType("text");
+        applicant.setLabel("报销人");
+        applicant.setPlaceholder("请输入报销人姓名");
+        applicant.setRequired(true);
+        applicant.setSpan(12);
+        fields.add(applicant);
+
+        FormField department = new FormField();
+        department.setId("department");
+        department.setType("text");
+        department.setLabel("所属部门");
+        department.setPlaceholder("请输入所属部门");
+        department.setRequired(true);
+        department.setSpan(12);
+        fields.add(department);
+
+        FormField expenseType = new FormField();
+        expenseType.setId("expenseType");
+        expenseType.setType("select");
+        expenseType.setLabel("费用类型");
+        expenseType.setPlaceholder("请选择费用类型");
+        expenseType.setRequired(true);
+        expenseType.setSpan(12);
+        expenseType.setOptions(Arrays.asList(
+                createOption("差旅费", "travel"),
+                createOption("办公费", "office"),
+                createOption("招待费", "entertainment"),
+                createOption("交通费", "transport"),
+                createOption("通讯费", "communication"),
+                createOption("其他", "other")
+        ));
+        fields.add(expenseType);
+
+        FormField amount = new FormField();
+        amount.setId("amount");
+        amount.setType("number");
+        amount.setLabel("报销金额（元）");
+        amount.setPlaceholder("请输入报销金额");
+        amount.setRequired(true);
+        amount.setSpan(12);
+        fields.add(amount);
+
+        FormField invoiceCount = new FormField();
+        invoiceCount.setId("invoiceCount");
+        invoiceCount.setType("number");
+        invoiceCount.setLabel("发票张数");
+        invoiceCount.setPlaceholder("请输入发票张数");
+        invoiceCount.setRequired(false);
+        invoiceCount.setSpan(12);
+        fields.add(invoiceCount);
+
+        FormField date = new FormField();
+        date.setId("expenseDate");
+        date.setType("date");
+        date.setLabel("费用发生日期");
+        date.setRequired(true);
+        date.setSpan(12);
+        fields.add(date);
+
+        FormField description = new FormField();
+        description.setId("description");
+        description.setType("textarea");
+        description.setLabel("费用说明");
+        description.setPlaceholder("请详细说明费用用途");
+        description.setRequired(true);
+        description.setMinLength(5);
+        description.setMaxLength(500);
+        fields.add(description);
 
         form.setFieldsJson(convertToJson(fields));
         return form;

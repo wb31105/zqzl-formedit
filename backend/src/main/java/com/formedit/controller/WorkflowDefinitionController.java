@@ -99,6 +99,8 @@ public class WorkflowDefinitionController {
         response.put("id", definition.getId());
         response.put("name", definition.getName());
         response.put("description", definition.getDescription());
+        response.put("formId", definition.getFormId());
+        response.put("formName", definition.getFormName());
         response.put("createdAt", definition.getCreatedAt());
         response.put("updatedAt", definition.getUpdatedAt());
         return response;
