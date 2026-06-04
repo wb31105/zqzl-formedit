@@ -54,6 +54,3 @@ frontend/yarn-error.log*
 .cache/
 .tmp/
 temp/
-
-# === Junk files ===
-3
