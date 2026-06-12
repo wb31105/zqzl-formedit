@@ -2,6 +2,7 @@ package com.formedit.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.formedit.dto.ValidationResult;
 import com.formedit.dto.WorkflowDefinitionDto;
 import com.formedit.entity.Form;
 import com.formedit.entity.WorkflowExecutionLog;
@@ -28,6 +29,7 @@ public class WorkflowInstanceService {
     private final WorkflowExecutionLogRepository executionLogRepository;
     private final WorkflowDefinitionService definitionService;
     private final FormRepository formRepository;
+    private final FormService formService;
     private final ObjectMapper objectMapper;
 
     public WorkflowInstanceService(WorkflowInstanceRepository instanceRepository,
@@ -35,12 +37,14 @@ public class WorkflowInstanceService {
                                     WorkflowExecutionLogRepository executionLogRepository,
                                     WorkflowDefinitionService definitionService,
                                     FormRepository formRepository,
+                                    FormService formService,
                                     ObjectMapper objectMapper) {
         this.instanceRepository = instanceRepository;
         this.taskRepository = taskRepository;
         this.executionLogRepository = executionLogRepository;
         this.definitionService = definitionService;
         this.formRepository = formRepository;
+        this.formService = formService;
         this.objectMapper = objectMapper;
     }
 
@@ -80,6 +84,19 @@ public class WorkflowInstanceService {
             throw new IllegalArgumentException("流程定义不存在");
         }
 
+        Long boundFormId = definition.getFormId();
+
+        if (formId != null) {
+            if (boundFormId == null) {
+                throw new IllegalArgumentException("该流程未绑定表单，启动时不能传入formId");
+            }
+            if (!formId.equals(boundFormId)) {
+                throw new IllegalArgumentException("传入的formId与流程定义绑定的表单不匹配");
+            }
+        } else if (boundFormId != null) {
+            throw new IllegalArgumentException("该流程已绑定表单，启动时必须传入formId");
+        }
+
         WorkflowInstance instance = new WorkflowInstance();
         instance.setDefinitionId(definitionId);
         instance.setDefinitionName(definition.getName());
@@ -91,6 +108,11 @@ public class WorkflowInstanceService {
             instance.setFormId(formId);
             instance.setFormName(form.getName());
             if (formData != null) {
+                ValidationResult validationResult = formService.validateForm(formId, formData);
+                if (!validationResult.isValid()) {
+                    String errorMsg = "表单验证失败: " + String.join(", ", validationResult.getErrors().values());
+                    throw new IllegalArgumentException(errorMsg);
+                }
                 instance.setFormDataJson(convertFormDataToJson(formData));
             }
         }
@@ -133,6 +155,7 @@ public class WorkflowInstanceService {
 
         task.setStatus("COMPLETED");
         task.setComment(comment);
+        task.setAction(action);
         task.setAssignee(assignee != null ? assignee : "系统管理员");
         task.setCompletedAt(LocalDateTime.now());
         taskRepository.save(task);
@@ -169,22 +192,12 @@ public class WorkflowInstanceService {
             List<WorkflowTask> pendingTasks = taskRepository.findByInstanceIdAndNodeIdAndStatusOrderByIdAsc(instanceId, currentNode.getId(), "PENDING");
             List<WorkflowTask> allNodeTasks = taskRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instanceId, currentNode.getId());
             long totalApprovers = allNodeTasks.size();
-            List<WorkflowExecutionLog> nodeLogs = executionLogRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instanceId, currentNode.getId());
 
             long approveCount = 0;
             long rejectCount = 0;
             for (WorkflowTask t : allNodeTasks) {
-                if ("COMPLETED".equals(t.getStatus()) && t.getAssignee() != null) {
-                    boolean approved = false;
-                    for (WorkflowExecutionLog log : nodeLogs) {
-                        if (log.getComment() != null && log.getComment().startsWith(t.getAssignee() + ":")) {
-                            if ("批准".equals(log.getAction())) {
-                                approved = true;
-                            }
-                            break;
-                        }
-                    }
-                    if (approved) {
+                if ("COMPLETED".equals(t.getStatus()) && t.getAction() != null) {
+                    if ("approve".equals(t.getAction())) {
                         approveCount++;
                     } else {
                         rejectCount++;
@@ -202,6 +215,11 @@ public class WorkflowInstanceService {
                     shouldFinalize = true;
                     countersignResult = "reject";
                 }
+            }
+
+            boolean alreadyFinalized = isCountersignFinalized(instanceId, currentNode.getId());
+            if (alreadyFinalized) {
+                return instance;
             }
 
             if (shouldFinalize) {
@@ -235,25 +253,12 @@ public class WorkflowInstanceService {
     private String evaluateCountersignResult(WorkflowInstance instance, WorkflowDefinitionDto.Node countersignNode) {
         List<WorkflowTask> allTasks = taskRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instance.getId(), countersignNode.getId());
 
-        List<WorkflowExecutionLog> nodeLogs = executionLogRepository.findByInstanceIdAndNodeIdOrderByIdAsc(
-                instance.getId(), countersignNode.getId());
-
         long approveCount = 0;
         long rejectCount = 0;
 
         for (WorkflowTask task : allTasks) {
-            if ("COMPLETED".equals(task.getStatus())) {
-                boolean approved = false;
-                for (WorkflowExecutionLog log : nodeLogs) {
-                    if (log.getComment() != null && task.getAssignee() != null &&
-                            log.getComment().startsWith(task.getAssignee() + ":")) {
-                        if ("批准".equals(log.getAction())) {
-                            approved = true;
-                        }
-                        break;
-                    }
-                }
-                if (approved) {
+            if ("COMPLETED".equals(task.getStatus()) && task.getAction() != null) {
+                if ("approve".equals(task.getAction())) {
                     approveCount++;
                 } else {
                     rejectCount++;
@@ -287,6 +292,16 @@ public class WorkflowInstanceService {
                 }
                 return "reject";
         }
+    }
+
+    private boolean isCountersignFinalized(Long instanceId, String nodeId) {
+        List<WorkflowExecutionLog> nodeLogs = executionLogRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instanceId, nodeId);
+        for (WorkflowExecutionLog log : nodeLogs) {
+            if (log.getAction() != null && log.getAction().startsWith("会签结果:")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String getCountersignTypeDescription(String countersignType) {

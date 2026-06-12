@@ -294,11 +294,35 @@ function WorkflowEditor() {
     const errors = {};
     selectedStartForm.fields?.forEach(field => {
       const value = startFormData[field.id];
-      if (field.required) {
-        const isEmpty = value === null || value === undefined || value === '' || 
-          (Array.isArray(value) && value.length === 0);
-        if (isEmpty) {
-          errors[field.id] = `${field.label}不能为空`;
+      const stringValue = value ? String(value).trim() : '';
+      const isEmpty = value === null || value === undefined || value === '' || 
+        (Array.isArray(value) && value.length === 0) || stringValue === '';
+
+      if (field.required && isEmpty) {
+        errors[field.id] = `${field.label}不能为空`;
+        return;
+      }
+
+      if (isEmpty) return;
+
+      const isTextLike = ['text', 'textarea', 'email', 'number'].includes(field.type);
+
+      if (isTextLike && field.minLength && stringValue.length < field.minLength) {
+        errors[field.id] = `${field.label}最少需要${field.minLength}个字符`;
+      }
+
+      if (isTextLike && field.maxLength && stringValue.length > field.maxLength) {
+        errors[field.id] = `${field.label}最多允许${field.maxLength}个字符`;
+      }
+
+      if (field.pattern && field.pattern.trim() && stringValue) {
+        try {
+          const regex = new RegExp(field.pattern);
+          if (!regex.test(stringValue)) {
+            errors[field.id] = field.patternMessage || `${field.label}格式不正确`;
+          }
+        } catch (e) {
+          console.error('正则表达式错误:', e);
         }
       }
     });

@@ -32,6 +32,9 @@ public class WorkflowTask {
     @Column(length = 1000)
     private String comment;
 
+    @Column(name = "action")
+    private String action;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
