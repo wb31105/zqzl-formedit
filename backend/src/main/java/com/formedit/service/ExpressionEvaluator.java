@@ -11,6 +11,19 @@ public class ExpressionEvaluator {
     public static boolean evaluate(String expression, Map<String, Object> context) {
         String substituted = substituteVariables(expression, context);
         List<Token> tokens = tokenize(substituted);
+
+        List<String> unresolved = new ArrayList<>();
+        for (Token t : tokens) {
+            if (t.type == TokenType.IDENT) {
+                unresolved.add(t.value);
+            }
+        }
+        if (!unresolved.isEmpty()) {
+            throw new IllegalArgumentException("表达式中存在未识别的变量/字段: "
+                    + String.join(", ", unresolved)
+                    + "（请检查字段ID是否正确、表单是否包含该字段）");
+        }
+
         Parser parser = new Parser(tokens);
         boolean result = parser.parseOr();
         if (parser.hasMore()) {

@@ -313,6 +313,10 @@ public class WorkflowInstanceService {
         }
         WorkflowDefinitionDto.Edge nextEdge = findNextEdge(definition, currentNode, lastAction, instance);
 
+        if (!"RUNNING".equals(instance.getStatus())) {
+            return;
+        }
+
         if (nextEdge == null) {
             instance.setStatus("COMPLETED");
             instance.setCurrentNodeId(null);
@@ -370,7 +374,7 @@ public class WorkflowInstanceService {
                     addExecutionLog(instance.getId(), currentNode.getId(), currentNode.getName(),
                             currentNode.getType(), "路由失败", errMsg);
                     failInstance(instance, errMsg);
-                    throw new IllegalStateException(errMsg);
+                    return null;
                 }
                 if (!"approve".equals(bt) && !"reject".equals(bt)) {
                     String errMsg = "节点 \"" + currentNode.getName() + "\" (" + currentNode.getType()
@@ -379,7 +383,7 @@ public class WorkflowInstanceService {
                     addExecutionLog(instance.getId(), currentNode.getId(), currentNode.getName(),
                             currentNode.getType(), "路由失败", errMsg);
                     failInstance(instance, errMsg);
-                    throw new IllegalStateException(errMsg);
+                    return null;
                 }
             }
 
@@ -401,7 +405,7 @@ public class WorkflowInstanceService {
                 addExecutionLog(instance.getId(), currentNode.getId(), currentNode.getName(),
                         currentNode.getType(), "路由失败", errMsg);
                 failInstance(instance, errMsg);
-                throw new IllegalStateException(errMsg);
+                return null;
             }
 
             return matched;
@@ -432,7 +436,7 @@ public class WorkflowInstanceService {
                     addExecutionLog(instance.getId(), conditionNode.getId(), conditionNode.getName(),
                             "condition", "表达式解析失败", errMsg);
                     failInstance(instance, errMsg);
-                    throw new IllegalStateException(errMsg, e);
+                    return null;
                 }
             }
         }
@@ -494,6 +498,9 @@ public class WorkflowInstanceService {
 
     private void processNode(WorkflowInstance instance, WorkflowDefinitionDto definition,
                              WorkflowDefinitionDto.Node node) {
+        if (!"RUNNING".equals(instance.getStatus())) {
+            return;
+        }
         switch (node.getType()) {
             case "end":
                 instance.setStatus("COMPLETED");
@@ -568,6 +575,9 @@ public class WorkflowInstanceService {
             case "condition":
                 addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(), "条件判断", null);
                 String conditionAction = resolveConditionExpression(node, instance);
+                if (conditionAction == null) {
+                    return;
+                }
                 addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(), "条件判断结果: " + ("approve".equals(conditionAction) ? "是" : "否"), null);
                 proceedToNextNode(instance, definition, node, conditionAction);
                 break;
