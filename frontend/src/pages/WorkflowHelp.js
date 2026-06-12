@@ -380,6 +380,15 @@ function WorkflowHelp() {
                 <li><code>{'${node_dept-manager_action}'} == 批准</code> - 部门经理批准后走下一步</li>
                 <li><code>type == &quot;sick&quot;</code> - 病假走特殊流程</li>
               </ul>
+
+              <p style={{ marginTop: '16px', padding: '12px', backgroundColor: '#fffbe6', border: '1px solid #ffe58f', borderRadius: '4px', fontSize: '13px', lineHeight: '1.8' }}>
+                <strong>💡 注意：</strong><br/>
+                1. 表单字段使用<strong>字段ID</strong>（不是字段标签，如用 <code>days</code> 不用"请假天数"），可在属性面板点击字段ID快速插入<br/>
+                2. 字符串比较值必须加<strong>引号</strong>，如 <code>leaveType == &quot;personal&quot;</code>（引号中的值是 select/radio 的 option value，不是显示文字）<br/>
+                3. 支持 <code>&amp;&amp;</code>（且）、<code>||</code>（或）、括号和优先级，如 <code>(days &gt; 3 &amp;&amp; leaveType == &quot;sick&quot;) || amount &gt; 5000</code><br/>
+                4. 表达式<strong>可以为空</strong>，空表达式时系统会使用上一审批节点的批准/拒绝结果判断走向<br/>
+                5. 写错表达式（语法错误、未闭合字符串等）在保存时会被校验拦截，运行时解析失败会停止流程并标记错误，不会静默当通过
+              </p>
             </div>
 
             <h3>5.3 分支类型配置规则</h3>

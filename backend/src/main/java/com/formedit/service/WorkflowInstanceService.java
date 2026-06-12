@@ -308,7 +308,10 @@ public class WorkflowInstanceService {
 
     private void proceedToNextNode(WorkflowInstance instance, WorkflowDefinitionDto definition,
                                    WorkflowDefinitionDto.Node currentNode, String lastAction) {
-        WorkflowDefinitionDto.Edge nextEdge = findNextEdge(definition, currentNode, lastAction);
+        if (!"RUNNING".equals(instance.getStatus())) {
+            return;
+        }
+        WorkflowDefinitionDto.Edge nextEdge = findNextEdge(definition, currentNode, lastAction, instance);
 
         if (nextEdge == null) {
             instance.setStatus("COMPLETED");
@@ -343,7 +346,8 @@ public class WorkflowInstanceService {
     }
 
     private WorkflowDefinitionDto.Edge findNextEdge(WorkflowDefinitionDto definition,
-                                                    WorkflowDefinitionDto.Node currentNode, String lastAction) {
+                                                    WorkflowDefinitionDto.Node currentNode, String lastAction,
+                                                    WorkflowInstance instance) {
         List<WorkflowDefinitionDto.Edge> outgoingEdges = definition.getEdges().stream()
                 .filter(e -> e.getSource().equals(currentNode.getId()))
                 .collect(Collectors.toList());
@@ -352,35 +356,64 @@ public class WorkflowInstanceService {
             return null;
         }
 
-        if ("condition".equals(currentNode.getType()) && outgoingEdges.size() > 1) {
-            if ("approve".equals(lastAction)) {
-                return outgoingEdges.stream()
-                        .filter(e -> "approve".equals(e.getBranchType()))
-                        .findFirst()
-                        .orElse(outgoingEdges.get(0));
-            } else {
-                return outgoingEdges.stream()
-                        .filter(e -> "reject".equals(e.getBranchType()))
-                        .findFirst()
-                        .orElse(outgoingEdges.size() > 1 ? outgoingEdges.get(1) : outgoingEdges.get(0));
-            }
-        }
+        boolean isBranchNode = "condition".equals(currentNode.getType())
+                || "approval".equals(currentNode.getType())
+                || "countersign".equals(currentNode.getType());
 
-        if (("approval".equals(currentNode.getType()) || "countersign".equals(currentNode.getType())) && outgoingEdges.size() > 1) {
-            if ("approve".equals(lastAction)) {
-                return outgoingEdges.stream()
-                        .filter(e -> "approve".equals(e.getBranchType()))
-                        .findFirst()
-                        .orElse(outgoingEdges.get(0));
-            } else {
-                return outgoingEdges.stream()
-                        .filter(e -> "reject".equals(e.getBranchType()))
-                        .findFirst()
-                        .orElse(outgoingEdges.size() > 1 ? outgoingEdges.get(1) : outgoingEdges.get(0));
+        if (isBranchNode && outgoingEdges.size() > 1) {
+            for (WorkflowDefinitionDto.Edge edge : outgoingEdges) {
+                String bt = edge.getBranchType();
+                if (bt == null || bt.trim().isEmpty()) {
+                    String errMsg = "节点 \"" + currentNode.getName() + "\" (" + currentNode.getType()
+                            + ") 存在多条出边但连线 \"" + (edge.getLabel() != null ? edge.getLabel() : edge.getId())
+                            + "\" 缺少 branchType（批准路径/拒绝路径），无法路由";
+                    addExecutionLog(instance.getId(), currentNode.getId(), currentNode.getName(),
+                            currentNode.getType(), "路由失败", errMsg);
+                    failInstance(instance, errMsg);
+                    throw new IllegalStateException(errMsg);
+                }
+                if (!"approve".equals(bt) && !"reject".equals(bt)) {
+                    String errMsg = "节点 \"" + currentNode.getName() + "\" (" + currentNode.getType()
+                            + ") 出边 \"" + (edge.getLabel() != null ? edge.getLabel() : edge.getId())
+                            + "\" 的 branchType=\"" + bt + "\" 无效，只能是 approve 或 reject";
+                    addExecutionLog(instance.getId(), currentNode.getId(), currentNode.getName(),
+                            currentNode.getType(), "路由失败", errMsg);
+                    failInstance(instance, errMsg);
+                    throw new IllegalStateException(errMsg);
+                }
             }
+
+            String expectedBranchType = "approve".equals(lastAction) ? "approve" : "reject";
+            String nodeTypeDesc = "condition".equals(currentNode.getType()) ? "条件分支节点"
+                    : "approval".equals(currentNode.getType()) ? "审批节点" : "会签节点";
+
+            WorkflowDefinitionDto.Edge matched = outgoingEdges.stream()
+                    .filter(e -> expectedBranchType.equals(e.getBranchType()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (matched == null) {
+                long approveCount = outgoingEdges.stream().filter(e -> "approve".equals(e.getBranchType())).count();
+                long rejectCount = outgoingEdges.stream().filter(e -> "reject".equals(e.getBranchType())).count();
+                String errMsg = nodeTypeDesc + " \"" + currentNode.getName() + "\" 需要匹配 branchType=\""
+                        + expectedBranchType + "\" 的出边（lastAction=" + lastAction
+                        + "），但未找到。当前批准路径: " + approveCount + " 条, 拒绝路径: " + rejectCount + " 条";
+                addExecutionLog(instance.getId(), currentNode.getId(), currentNode.getName(),
+                        currentNode.getType(), "路由失败", errMsg);
+                failInstance(instance, errMsg);
+                throw new IllegalStateException(errMsg);
+            }
+
+            return matched;
         }
 
         return outgoingEdges.get(0);
+    }
+
+    private void failInstance(WorkflowInstance instance, String reason) {
+        instance.setStatus("ERROR");
+        instance.setEndedAt(LocalDateTime.now());
+        instanceRepository.save(instance);
     }
 
     private String resolveConditionExpression(WorkflowDefinitionDto.Node conditionNode, WorkflowInstance instance) {
@@ -393,8 +426,13 @@ public class WorkflowInstanceService {
                     boolean result = evaluateExpression(expression, context);
                     return result ? "approve" : "reject";
                 } catch (Exception e) {
+                    String errMsg = "条件节点 \"" + conditionNode.getName()
+                            + "\" 表达式解析失败: " + e.getMessage()
+                            + "，表达式=\"" + expression + "\"";
                     addExecutionLog(instance.getId(), conditionNode.getId(), conditionNode.getName(),
-                            "condition", "条件表达式解析失败: " + e.getMessage(), null);
+                            "condition", "表达式解析失败", errMsg);
+                    failInstance(instance, errMsg);
+                    throw new IllegalStateException(errMsg, e);
                 }
             }
         }
@@ -451,136 +489,7 @@ public class WorkflowInstanceService {
     }
 
     private boolean evaluateExpression(String expression, Map<String, Object> context) {
-        String expr = expression.toLowerCase().trim();
-
-        for (Map.Entry<String, Object> entry : context.entrySet()) {
-            String key = entry.getKey().toLowerCase();
-            String value = entry.getValue() != null ? entry.getValue().toString() : "";
-            expr = expr.replace("${" + key + "}", value);
-            expr = expr.replace("{" + key + "}", value);
-            expr = expr.replaceAll("\\b" + key + "\\b", value);
-        }
-
-        if (expr.contains("&&")) {
-            String[] parts = expr.split("&&");
-            for (String part : parts) {
-                if (!evaluateSingleExpression(part.trim())) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        if (expr.contains("||")) {
-            String[] parts = expr.split("\\|\\|");
-            for (String part : parts) {
-                if (evaluateSingleExpression(part.trim())) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        return evaluateSingleExpression(expr);
-    }
-
-    private String stripQuotes(String str) {
-        if (str == null) return "";
-        str = str.trim();
-        if ((str.startsWith("\"") && str.endsWith("\"")) || 
-            (str.startsWith("'") && str.endsWith("'"))) {
-            return str.substring(1, str.length() - 1);
-        }
-        return str;
-    }
-
-    private boolean evaluateSingleExpression(String expr) {
-        if (expr == null || expr.isEmpty()) {
-            return true;
-        }
-        expr = expr.trim();
-
-        if (expr.contains(">=")) {
-            String[] parts = expr.split(">=");
-            if (parts.length == 2) {
-                String left = stripQuotes(parts[0].trim());
-                String right = stripQuotes(parts[1].trim());
-                try {
-                    double l = Double.parseDouble(left);
-                    double r = Double.parseDouble(right);
-                    return l >= r;
-                } catch (NumberFormatException e) {
-                    return left.compareTo(right) >= 0;
-                }
-            }
-        }
-        if (expr.contains("<=")) {
-            String[] parts = expr.split("<=");
-            if (parts.length == 2) {
-                String left = stripQuotes(parts[0].trim());
-                String right = stripQuotes(parts[1].trim());
-                try {
-                    double l = Double.parseDouble(left);
-                    double r = Double.parseDouble(right);
-                    return l <= r;
-                } catch (NumberFormatException e) {
-                    return left.compareTo(right) <= 0;
-                }
-            }
-        }
-        if (expr.contains(">")) {
-            String[] parts = expr.split(">");
-            if (parts.length == 2) {
-                String left = stripQuotes(parts[0].trim());
-                String right = stripQuotes(parts[1].trim());
-                try {
-                    double l = Double.parseDouble(left);
-                    double r = Double.parseDouble(right);
-                    return l > r;
-                } catch (NumberFormatException e) {
-                    return left.compareTo(right) > 0;
-                }
-            }
-        }
-        if (expr.contains("<")) {
-            String[] parts = expr.split("<");
-            if (parts.length == 2) {
-                String left = stripQuotes(parts[0].trim());
-                String right = stripQuotes(parts[1].trim());
-                try {
-                    double l = Double.parseDouble(left);
-                    double r = Double.parseDouble(right);
-                    return l < r;
-                } catch (NumberFormatException e) {
-                    return left.compareTo(right) < 0;
-                }
-            }
-        }
-        if (expr.contains("==")) {
-            String[] parts = expr.split("==");
-            if (parts.length == 2) {
-                String left = stripQuotes(parts[0].trim());
-                String right = stripQuotes(parts[1].trim());
-                return left.equals(right);
-            }
-        }
-        if (expr.contains("!=")) {
-            String[] parts = expr.split("!=");
-            if (parts.length == 2) {
-                String left = stripQuotes(parts[0].trim());
-                String right = stripQuotes(parts[1].trim());
-                return !left.equals(right);
-            }
-        }
-
-        if ("true".equals(expr) || "yes".equals(expr) || "是".equals(expr) || "批准".equals(expr)) {
-            return true;
-        }
-        if ("false".equals(expr) || "no".equals(expr) || "否".equals(expr) || "拒绝".equals(expr)) {
-            return false;
-        }
-
-        return true;
+        return ExpressionEvaluator.evaluate(expression, context);
     }
 
     private void processNode(WorkflowInstance instance, WorkflowDefinitionDto definition,

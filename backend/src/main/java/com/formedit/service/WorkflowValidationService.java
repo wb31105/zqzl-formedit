@@ -23,8 +23,26 @@ public class WorkflowValidationService {
         validateIsolatedNodes(dto, result);
         validateConditionBranches(dto, result);
         validateNodeConnections(dto, result);
+        validateConditionExpressions(dto, result);
 
         return result;
+    }
+
+    private void validateConditionExpressions(WorkflowDefinitionDto dto, WorkflowValidationResult result) {
+        if (dto.getNodes() == null) return;
+        for (WorkflowDefinitionDto.Node node : dto.getNodes()) {
+            if (!"condition".equals(node.getType())) continue;
+            Map<String, Object> props = node.getProperties();
+            if (props == null || props.get("expression") == null) continue;
+            String expr = props.get("expression").toString().trim();
+            if (expr.isEmpty()) continue;
+            try {
+                ExpressionEvaluator.validateSyntax(expr);
+            } catch (Exception e) {
+                result.addError("条件节点 \"" + node.getName() + "\" 的表达式语法错误: "
+                        + e.getMessage() + "，表达式=\"" + expr + "\"");
+            }
+        }
     }
 
     private void validateStartAndEndNodes(WorkflowDefinitionDto dto, WorkflowValidationResult result) {
