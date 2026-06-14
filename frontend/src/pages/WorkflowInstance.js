@@ -20,7 +20,7 @@ function WorkflowInstance() {
   const [processingTaskId, setProcessingTaskId] = useState(null);
   const [comments, setComments] = useState({});
   const [form, setForm] = useState(null);
-  const { showError, showSuccess } = useNotification();
+  const { showError, showSuccess, showConfirm } = useNotification();
 
   const id = params.id;
   const definitionId = params.definitionId;
@@ -41,11 +41,18 @@ function WorkflowInstance() {
       const response = await workflowInstanceApi.startInstance(definitionId);
       setInstance(response.data);
       await loadDefinition(definitionId);
+      if (response.data.formId) {
+        try {
+          const formResponse = await formApi.getFormById(response.data.formId);
+          setForm(formResponse.data);
+        } catch (formError) {
+          console.error('加载表单详情失败:', formError);
+        }
+      }
     } catch (error) {
       console.error('启动流程失败:', error);
       const msg = '启动失败: ' + (error.response?.data?.error || error.message);
       setLoadError(msg);
-      showError(msg);
       navigate('/workflows');
     } finally {
       setLoading(false);
@@ -76,7 +83,6 @@ function WorkflowInstance() {
         msg = '加载实例失败: ' + (error.response?.data?.error || error.message || '网络错误');
       }
       setLoadError(msg);
-      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -88,7 +94,7 @@ function WorkflowInstance() {
       setDefinition(response.data);
     } catch (error) {
       console.error('加载流程定义失败:', error);
-      showError('加载流程定义失败: ' + (error.response?.data?.error || error.message));
+      setLoadError('加载流程定义失败: ' + (error.response?.data?.error || error.message || '网络错误'));
     }
   };
 

@@ -19,7 +19,7 @@ function WorkflowList() {
   const [instancesTotalElements, setInstancesTotalElements] = useState(0);
   const [loadError, setLoadError] = useState('');
   const navigate = useNavigate();
-  const { showError, showSuccess } = useNotification();
+  const { showError, showSuccess, showConfirm } = useNotification();
 
   const [showStartModal, setShowStartModal] = useState(false);
   const [startingDefinitionId, setStartingDefinitionId] = useState(null);
@@ -50,7 +50,6 @@ function WorkflowList() {
       console.error('加载流程列表失败:', error);
       const msg = '加载流程列表失败: ' + (error.response?.data?.error || error.message || '网络错误');
       setLoadError(msg);
-      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -69,7 +68,6 @@ function WorkflowList() {
       console.error('加载实例列表失败:', error);
       const msg = '加载实例列表失败: ' + (error.response?.data?.error || error.message || '网络错误');
       setLoadError(msg);
-      showError(msg);
     } finally {
       setLoading(false);
     }

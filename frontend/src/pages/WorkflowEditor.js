@@ -31,7 +31,7 @@ function WorkflowEditor() {
   const [isNewFlag, setIsNewFlag] = useState(id === 'new');
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedEdge, setSelectedEdge] = useState(null);
-  const { showError, showSuccess, showWarning } = useNotification();
+  const { showError, showSuccess, showWarning, showConfirm } = useNotification();
 
   const [showStartModal, setShowStartModal] = useState(false);
   const [selectedStartForm, setSelectedStartForm] = useState(null);
@@ -131,7 +131,6 @@ function WorkflowEditor() {
         msg += error.response?.data?.error || error.message || '网络错误';
       }
       setLoadError(msg);
-      showError(msg);
     } finally {
       setLoading(false);
     }

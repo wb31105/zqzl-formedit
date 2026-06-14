@@ -31,7 +31,6 @@ function WorkflowPreview() {
         msg = '加载流程失败: ' + (error.response?.data?.error || error.message || '网络错误');
       }
       setLoadError(msg);
-      showError(msg);
     } finally {
       setLoading(false);
     }
