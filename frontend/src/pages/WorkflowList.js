@@ -77,7 +77,8 @@ function WorkflowList() {
 
   const handleDelete = async (id, e) => {
     e.stopPropagation();
-    if (window.confirm('确定要删除这个流程吗？')) {
+    const confirmed = await showConfirm('确定要删除这个流程吗？删除后无法恢复。', '删除流程');
+    if (confirmed) {
       try {
         await workflowDefinitionApi.deleteDefinition(id);
         showSuccess('流程删除成功');
@@ -91,7 +92,8 @@ function WorkflowList() {
 
   const handleDeleteInstance = async (id, e) => {
     e.stopPropagation();
-    if (window.confirm('确定要删除这个流程实例吗？')) {
+    const confirmed = await showConfirm('确定要删除这个流程实例吗？删除后无法恢复。', '删除实例');
+    if (confirmed) {
       try {
         await workflowInstanceApi.deleteInstance(id);
         showSuccess('实例删除成功');
@@ -126,7 +128,8 @@ function WorkflowList() {
         showError('加载绑定表单失败: ' + (error.response?.data?.error || error.message));
       }
     } else {
-      if (window.confirm('此流程未绑定表单，是否直接启动？')) {
+      const confirmed = await showConfirm('此流程未绑定表单，是否直接启动？', '启动确认');
+      if (confirmed) {
         doStartInstance(definitionId, null, null);
       }
     }
@@ -377,6 +380,39 @@ function WorkflowList() {
     return <div className="workflow-list-container">加载中...</div>;
   }
 
+  if (loadError) {
+    return (
+      <div className="workflow-list-container">
+        <div style={{
+          textAlign: 'center',
+          padding: '80px 20px',
+          color: '#666',
+          maxWidth: '600px',
+          margin: '0 auto'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+          <h2 style={{ color: '#cf1322', marginBottom: '8px' }}>
+            加载失败
+          </h2>
+          <p style={{ marginBottom: '16px', color: '#666', lineHeight: '1.6' }}>
+            {loadError}
+          </p>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => activeTab === 'definitions' ? loadWorkflows() : loadInstances()}
+            >
+              重新加载
+            </button>
+            <button className="btn btn-default" onClick={() => navigate('/')}>
+              返回首页
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="workflow-list-container">
       <div className="page-header">
@@ -403,7 +439,7 @@ function WorkflowList() {
 
       {activeTab === 'definitions' ? renderDefinitions() : renderInstances()}
 
-      {(activeTab === 'definitions' ? workflows.length === 0 : instances.length === 0) && (
+      {!loadError && (activeTab === 'definitions' ? workflows.length === 0 : instances.length === 0) && (
         <div style={{ textAlign: 'center', padding: '60px', color: '#999' }}>
           {activeTab === 'definitions'
             ? '暂无流程定义，点击"新建流程"创建'

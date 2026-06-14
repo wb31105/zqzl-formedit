@@ -281,7 +281,8 @@ function WorkflowEditor() {
           showError('加载表单失败: ' + (error.response?.data?.error || error.message));
         }
       } else {
-        if (window.confirm('此流程未绑定表单，是否直接启动？')) {
+        const confirmed = await showConfirm('此流程未绑定表单，是否直接启动？', '启动确认');
+        if (confirmed) {
           navigate(`/workflow/instance/new/${currentDefinitionId}`);
         }
       }
@@ -384,6 +385,38 @@ function WorkflowEditor() {
 
   if (loading) {
     return <div className="workflow-editor">加载中...</div>;
+  }
+
+  if (loadError) {
+    return (
+      <div className="workflow-editor">
+        <div style={{
+          textAlign: 'center',
+          padding: '80px 20px',
+          color: '#666',
+          maxWidth: '600px',
+          margin: '0 auto'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+          <h2 style={{ color: '#cf1322', marginBottom: '8px' }}>
+            加载流程失败
+          </h2>
+          <p style={{ marginBottom: '16px', color: '#666', lineHeight: '1.6' }}>
+            {loadError}
+          </p>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            {!isNewFlag && currentDefinitionId && (
+              <button className="btn btn-primary" onClick={() => loadWorkflow(currentDefinitionId)}>
+                重新加载
+              </button>
+            )}
+            <button className="btn btn-default" onClick={() => navigate('/workflows')}>
+              返回流程列表
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

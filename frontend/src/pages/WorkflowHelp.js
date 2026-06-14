@@ -38,7 +38,7 @@ function WorkflowHelp() {
           { name: '条件表达式', desc: '用于自动判断的条件表达式，如：amount > 1000、days <= 3' },
           { name: '条件说明', desc: '对该条件的描述说明，方便其他人员理解' },
         ],
-        usage: '用于需要根据审批结果或业务数据自动选择不同路径的场景。流程流转到条件分支节点时会自动判断，无需人工操作。\n\n**两种判断方式（优先级从高到低）：**\n\n1. **条件表达式判断**：如果配置了条件表达式，系统会自动解析表达式并判断结果。支持的运算符：>、<、>=、<=、==、!=。支持变量替换，如 `${node_xxx_action}` 可以获取某个节点的操作结果。\n\n2. **上一节点操作判断**：如果没有配置条件表达式，系统会自动使用上一个审批节点的操作结果（批准/拒绝）来判断路径。\n\n**连线分支类型配置：**\n每条出边必须设置分支类型，用于决定流程走向：\n- 批准路径（approve）：判断结果为"是/批准"时走此路径\n- 拒绝路径（reject）：判断结果为"否/拒绝"时走此路径\n\n连线标签仅供显示，不参与路由判断。条件分支节点必须有恰好两条出边，分别设置为"批准路径"和"拒绝路径"。',
+        usage: '用于需要根据审批结果或业务数据自动选择不同路径的场景。流程流转到条件分支节点时会自动判断，无需人工操作。\n\n**两种判断方式（优先级从高到低）：**\n\n1. **条件表达式判断**：如果配置了条件表达式，系统会自动解析表达式并判断结果。支持的运算符：>、<、>=、<=、==、!=、&&、||。\n\n   表达式中的变量分两类：\n   - **表单字段**：直接写字段ID，如 `days > 3`、`leaveType == "annual"`\n   - **系统变量**：审批节点的操作结果，格式为 `node_节点ID_action`，如 `node_approve_action == "approve"` 表示节点 approve 的操作是批准\n\n2. **上一节点操作判断**：如果没有配置条件表达式，系统会自动使用上一个审批节点的操作结果（批准/拒绝）来判断路径。\n\n**连线分支类型配置：**\n每条出边必须设置分支类型，用于决定流程走向：\n- 批准路径（approve）：判断结果为"是/批准"时走此路径\n- 拒绝路径（reject）：判断结果为"否/拒绝"时走此路径\n\n连线标签仅供显示，不参与路由判断。条件分支节点必须有恰好两条出边，分别设置为"批准路径"和"拒绝路径"。',
       },
     {
       type: 'countersign',
@@ -345,46 +345,63 @@ function WorkflowHelp() {
                 </tbody>
               </table>
 
-              <p><strong>支持的变量替换：</strong></p>
-              <p>使用 {'${变量名}'} 或 {'{变量名}'} 的格式引用上下文变量。</p>
+              <p><strong>表达式中的变量：</strong></p>
+              <p>表达式中直接使用变量名，无需加 <code>${'{'}${'}'}</code> 或其他包裹符号。变量分为两类：</p>
+              
+              <p style={{ marginTop: '12px', fontWeight: 'bold' }}>一、表单字段变量</p>
+              <p>流程绑定表单后，可直接使用表单的 <strong>字段ID</strong> 作为变量名。</p>
+              <table className="config-table">
+                <thead>
+                  <tr>
+                    <th>变量来源</th>
+                    <th>写法</th>
+                    <th>示例</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>数字字段</td>
+                    <td>直接写字段ID，直接比较数字</td>
+                    <td><code>days &gt; 3</code></td>
+                  </tr>
+                  <tr>
+                    <td>文本/下拉字段</td>
+                    <td>直接写字段ID，字符串加引号</td>
+                    <td><code>leaveType == "annual"</code></td>
+                  </tr>
+                  <tr>
+                    <td>布尔字段</td>
+                    <td>直接写字段ID</td>
+                    <td><code>isUrgent == true</code></td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <p style={{ marginTop: '16px', fontWeight: 'bold' }}>二、系统内置变量</p>
+              <p>系统提供的内置变量，主要用于判断审批节点的操作结果。</p>
               <table className="config-table">
                 <thead>
                   <tr>
                     <th>变量名</th>
                     <th>说明</th>
-                    <th>示例值</th>
+                    <th>示例</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td><code>instanceId</code></td>
-                    <td>流程实例ID</td>
-                    <td>123</td>
-                  </tr>
-                  <tr>
-                    <td><code>definitionId</code></td>
-                    <td>流程定义ID</td>
-                    <td>456</td>
-                  </tr>
-                  <tr>
-                    <td><code>definitionName</code></td>
-                    <td>流程名称</td>
-                    <td>员工请假审批</td>
-                  </tr>
-                  <tr>
-                    <td><code>status</code></td>
-                    <td>实例状态</td>
-                    <td>RUNNING</td>
-                  </tr>
-                  <tr>
                     <td><code>node_节点ID_action</code></td>
-                    <td>指定节点的操作结果</td>
-                    <td>批准、拒绝</td>
+                    <td>指定审批节点的操作结果</td>
+                    <td><code>node_manager_action == "approve"</code></td>
                   </tr>
                   <tr>
                     <td><code>node_节点ID_comment</code></td>
-                    <td>指定节点的处理意见</td>
-                    <td>同意请假</td>
+                    <td>指定节点的处理意见（文本比较）</td>
+                    <td><code>node_manager_comment == "同意"</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>instanceId</code></td>
+                    <td>流程实例ID（数字）</td>
+                    <td><code>instanceId &gt; 100</code></td>
                   </tr>
                 </tbody>
               </table>

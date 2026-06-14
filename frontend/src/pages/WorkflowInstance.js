@@ -160,7 +160,8 @@ function WorkflowInstance() {
     const buttonConfig = getButtonConfig(task.nodeId);
     const confirmMsg = action === 'approve' ? buttonConfig.confirmApprove : buttonConfig.confirmReject;
 
-    if (!window.confirm(confirmMsg)) {
+    const confirmed = await showConfirm(confirmMsg, action === 'approve' ? '确认批准' : '确认拒绝');
+    if (!confirmed) {
       return;
     }
 
@@ -239,8 +240,37 @@ function WorkflowInstance() {
     return <div className="workflow-instance">加载中...</div>;
   }
 
-  if (!instance || !definition) {
-    return <div className="workflow-instance">数据加载失败</div>;
+  if (loadError || !instance || !definition) {
+    return (
+      <div className="workflow-instance">
+        <div style={{
+          textAlign: 'center',
+          padding: '80px 20px',
+          color: '#666',
+          maxWidth: '600px',
+          margin: '0 auto'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+          <h2 style={{ color: '#cf1322', marginBottom: '8px' }}>
+            {loadError || '数据加载失败'}
+          </h2>
+          <p style={{ marginBottom: '24px', color: '#999' }}>
+            {!instance ? '流程实例不存在或加载出错，请检查ID是否正确' : '流程定义加载失败'}
+          </p>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => window.location.reload()}
+            >
+              重新加载
+            </button>
+            <button className="btn btn-default" onClick={() => navigate('/workflows')}>
+              返回流程列表
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const pendingTasksByNode = getPendingTasksGrouped();

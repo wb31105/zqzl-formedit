@@ -1141,8 +1141,12 @@
 
 .workflow-preview {
   padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .preview-header {
@@ -1176,9 +1180,13 @@
 .preview-canvas-container {
   background: white;
   border-radius: 8px;
-  padding: 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   margin-bottom: 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .preview-legend {
@@ -1257,21 +1265,29 @@
 .instance-canvas-section {
   flex: 1;
   padding: 20px;
-  overflow: auto;
+  overflow: hidden;
   background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .instance-canvas-section h3 {
   font-size: 16px;
   color: #333;
   margin: 0 0 16px 0;
+  flex-shrink: 0;
 }
 
 .instance-canvas {
   background: white;
   border-radius: 8px;
-  padding: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .instance-side-panel {

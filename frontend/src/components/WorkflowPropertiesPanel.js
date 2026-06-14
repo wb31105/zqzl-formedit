@@ -78,9 +78,14 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
     const newExpr = currentExpr + fieldId;
     handlePropertyChange('expression', newExpr);
     if (expressionInputRef.current) {
-      expressionInputRef.current.focus();
-      const len = newExpr.length;
-      expressionInputRef.current.setSelectionRange(len, len);
+      expressionInputRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      setTimeout(() => {
+        if (expressionInputRef.current) {
+          expressionInputRef.current.focus();
+          const len = newExpr.length;
+          expressionInputRef.current.setSelectionRange(len, len);
+        }
+      }, 100);
     }
   };
 
@@ -89,9 +94,14 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
     const newExpr = currentExpr + ' ' + operator + ' ';
     handlePropertyChange('expression', newExpr);
     if (expressionInputRef.current) {
-      expressionInputRef.current.focus();
-      const len = newExpr.length;
-      expressionInputRef.current.setSelectionRange(len, len);
+      expressionInputRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      setTimeout(() => {
+        if (expressionInputRef.current) {
+          expressionInputRef.current.focus();
+          const len = newExpr.length;
+          expressionInputRef.current.setSelectionRange(len, len);
+        }
+      }, 100);
     }
   };
 

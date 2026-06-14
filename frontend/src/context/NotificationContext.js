@@ -13,6 +13,7 @@ export const useNotification = () => {
 
 export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
+  const [confirmState, setConfirmState] = useState(null);
 
   const addNotification = useCallback((type, message, duration = 3000) => {
     const id = Date.now() + Math.random();
@@ -45,11 +46,36 @@ export const NotificationProvider = ({ children }) => {
     return addNotification('warning', message, duration);
   }, [addNotification]);
 
+  const showConfirm = useCallback((message, title = '确认操作') => {
+    return new Promise((resolve) => {
+      setConfirmState({
+        message,
+        title,
+        resolve,
+      });
+    });
+  }, []);
+
+  const handleConfirmOk = useCallback(() => {
+    if (confirmState) {
+      confirmState.resolve(true);
+      setConfirmState(null);
+    }
+  }, [confirmState]);
+
+  const handleConfirmCancel = useCallback(() => {
+    if (confirmState) {
+      confirmState.resolve(false);
+      setConfirmState(null);
+    }
+  }, [confirmState]);
+
   const value = {
     showError,
     showSuccess,
     showInfo,
     showWarning,
+    showConfirm,
     removeNotification,
   };
 
@@ -74,6 +100,28 @@ export const NotificationProvider = ({ children }) => {
           </div>
         ))}
       </div>
+
+      {confirmState && (
+        <div className="confirm-overlay" onClick={handleConfirmCancel}>
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-header">
+              <h3>{confirmState.title}</h3>
+            </div>
+            <div className="confirm-body">
+              <div className="confirm-icon">⚠️</div>
+              <div className="confirm-message">{confirmState.message}</div>
+            </div>
+            <div className="confirm-footer">
+              <button className="btn btn-default" onClick={handleConfirmCancel}>
+                取消
+              </button>
+              <button className="btn btn-primary" onClick={handleConfirmOk}>
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </NotificationContext.Provider>
   );
 };
