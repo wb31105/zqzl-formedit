@@ -24,6 +24,11 @@ import java.util.stream.Collectors;
 @Service
 public class WorkflowInstanceService {
 
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> NODE_LOCKS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Set<String> FINALIZED_NODES =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private final WorkflowInstanceRepository instanceRepository;
     private final WorkflowTaskRepository taskRepository;
     private final WorkflowExecutionLogRepository executionLogRepository;
@@ -107,14 +112,15 @@ public class WorkflowInstanceService {
                     .orElseThrow(() -> new IllegalArgumentException("表单不存在"));
             instance.setFormId(formId);
             instance.setFormName(form.getName());
-            if (formData != null) {
-                ValidationResult validationResult = formService.validateForm(formId, formData);
-                if (!validationResult.isValid()) {
-                    String errorMsg = "表单验证失败: " + String.join(", ", validationResult.getErrors().values());
-                    throw new IllegalArgumentException(errorMsg);
-                }
-                instance.setFormDataJson(convertFormDataToJson(formData));
+            if (formData == null) {
+                throw new IllegalArgumentException("该流程绑定了表单，启动时必须传入formData");
             }
+            ValidationResult validationResult = formService.validateForm(formId, formData);
+            if (!validationResult.isValid()) {
+                String errorMsg = "表单验证失败: " + String.join(", ", validationResult.getErrors().values());
+                throw new IllegalArgumentException(errorMsg);
+            }
+            instance.setFormDataJson(convertFormDataToJson(formData));
         }
 
         instance = instanceRepository.save(instance);
@@ -217,29 +223,84 @@ public class WorkflowInstanceService {
                 }
             }
 
-            boolean alreadyFinalized = isCountersignFinalized(instanceId, currentNode.getId());
-            if (alreadyFinalized) {
+            String finalizeKey = instanceId + "_" + currentNode.getId();
+
+            if (FINALIZED_NODES.contains(finalizeKey)) {
+                return instance;
+            }
+            if (isCountersignFinalized(instanceId, currentNode.getId())) {
+                FINALIZED_NODES.add(finalizeKey);
                 return instance;
             }
 
-            if (shouldFinalize) {
-                for (WorkflowTask pendingTask : pendingTasks) {
-                    pendingTask.setStatus("CANCELLED");
-                    pendingTask.setComment("会签已结束，任务自动取消");
-                    pendingTask.setCompletedAt(LocalDateTime.now());
-                    taskRepository.save(pendingTask);
+            Object lock = NODE_LOCKS.computeIfAbsent(finalizeKey, k -> new Object());
+            synchronized (lock) {
+                if (FINALIZED_NODES.contains(finalizeKey)) {
+                    return instance;
                 }
-                addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
-                        "会签结果: " + ("approve".equals(countersignResult) ? "通过" : "拒绝"), null);
-                proceedToNextNode(instance, definition, currentNode, countersignResult);
-            } else if (pendingTasks.isEmpty()) {
-                countersignResult = evaluateCountersignResult(instance, currentNode);
-                addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
-                        "会签结果: " + ("approve".equals(countersignResult) ? "通过" : "拒绝"), null);
-                proceedToNextNode(instance, definition, currentNode, countersignResult);
-            } else {
-                addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
-                        "等待其他审批人...", "剩余 " + pendingTasks.size() + " 人未审批");
+                if (isCountersignFinalized(instanceId, currentNode.getId())) {
+                    FINALIZED_NODES.add(finalizeKey);
+                    return instance;
+                }
+
+                List<WorkflowTask> freshPendingTasks =
+                        taskRepository.findByInstanceIdAndNodeIdAndStatusOrderByIdAsc(instanceId, currentNode.getId(), "PENDING");
+                List<WorkflowTask> freshAllTasks =
+                        taskRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instanceId, currentNode.getId());
+                long freshApprove = 0;
+                long freshReject = 0;
+                for (WorkflowTask t : freshAllTasks) {
+                    if ("COMPLETED".equals(t.getStatus()) && t.getAction() != null) {
+                        if ("approve".equals(t.getAction())) freshApprove++;
+                        else freshReject++;
+                    }
+                }
+                long freshTotal = freshAllTasks.size();
+
+                boolean doFinalize = false;
+                String finalResult = null;
+
+                if ("veto".equals(countersignType) && "reject".equals(action)) {
+                    doFinalize = true;
+                    finalResult = "reject";
+                } else if ("all".equals(countersignType) && "reject".equals(action)) {
+                    doFinalize = true;
+                    finalResult = "reject";
+                }
+
+                if (!doFinalize && "majority".equals(countersignType) && freshPendingTasks != null && !freshPendingTasks.isEmpty()) {
+                    long remaining = freshPendingTasks.size();
+                    if (freshApprove > freshTotal / 2) {
+                        doFinalize = true;
+                        finalResult = "approve";
+                    } else if (freshApprove + remaining <= freshTotal / 2) {
+                        doFinalize = true;
+                        finalResult = "reject";
+                    }
+                }
+
+                if (!doFinalize && (freshPendingTasks == null || freshPendingTasks.isEmpty())) {
+                    finalResult = evaluateCountersignResult(instance, currentNode);
+                    doFinalize = true;
+                }
+
+                if (doFinalize) {
+                    FINALIZED_NODES.add(finalizeKey);
+                    if (freshPendingTasks != null) {
+                        for (WorkflowTask pendingTask : freshPendingTasks) {
+                            pendingTask.setStatus("CANCELLED");
+                            pendingTask.setComment("会签已结束，任务自动取消");
+                            pendingTask.setCompletedAt(LocalDateTime.now());
+                            taskRepository.save(pendingTask);
+                        }
+                    }
+                    addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
+                            "会签结果: " + ("approve".equals(finalResult) ? "通过" : "拒绝"), null);
+                    proceedToNextNode(instance, definition, currentNode, finalResult);
+                } else {
+                    addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
+                            "等待其他审批人...", "剩余 " + freshPendingTasks.size() + " 人未审批");
+                }
             }
         } else {
             addExecutionLog(instanceId, task.getNodeId(), task.getNodeName(), "approval",
