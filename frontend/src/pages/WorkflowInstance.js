@@ -8,6 +8,7 @@ import {
   workflowInstanceApi,
   getNodeTypeConfig,
 } from '../services/workflowApi';
+import { useNotification } from '../context/NotificationContext';
 
 function WorkflowInstance() {
   const params = useParams();
@@ -15,9 +16,11 @@ function WorkflowInstance() {
   const [instance, setInstance] = useState(null);
   const [definition, setDefinition] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [processingTaskId, setProcessingTaskId] = useState(null);
   const [comments, setComments] = useState({});
   const [form, setForm] = useState(null);
+  const { showError, showSuccess } = useNotification();
 
   const id = params.id;
   const definitionId = params.definitionId;
@@ -33,13 +36,16 @@ function WorkflowInstance() {
 
   const startNewInstance = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const response = await workflowInstanceApi.startInstance(definitionId);
       setInstance(response.data);
       await loadDefinition(definitionId);
     } catch (error) {
       console.error('启动流程失败:', error);
-      alert('启动失败: ' + (error.response?.data?.error || error.message));
+      const msg = '启动失败: ' + (error.response?.data?.error || error.message);
+      setLoadError(msg);
+      showError(msg);
       navigate('/workflows');
     } finally {
       setLoading(false);
@@ -48,6 +54,7 @@ function WorkflowInstance() {
 
   const loadInstance = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const response = await workflowInstanceApi.getInstanceById(id);
       setInstance(response.data);
@@ -62,6 +69,14 @@ function WorkflowInstance() {
       }
     } catch (error) {
       console.error('加载实例失败:', error);
+      let msg;
+      if (error.response?.status === 404) {
+        msg = '流程实例不存在或已被删除';
+      } else {
+        msg = '加载实例失败: ' + (error.response?.data?.error || error.message || '网络错误');
+      }
+      setLoadError(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -73,6 +88,7 @@ function WorkflowInstance() {
       setDefinition(response.data);
     } catch (error) {
       console.error('加载流程定义失败:', error);
+      showError('加载流程定义失败: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -164,9 +180,10 @@ function WorkflowInstance() {
         delete newComments[task.id];
         return newComments;
       });
+      showSuccess('操作成功');
     } catch (error) {
       console.error('处理任务失败:', error);
-      alert('处理失败: ' + (error.response?.data?.error || error.message));
+      showError('处理失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setProcessingTaskId(null);
     }

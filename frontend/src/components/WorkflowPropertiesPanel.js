@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getNodeTypeConfig } from '../services/workflowApi';
 import { formApi } from '../services/api';
 
@@ -15,6 +15,9 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
   const [formsList, setFormsList] = useState([]);
   const [selectedFormForFields, setSelectedFormForFields] = useState(null);
   const [loadingForms, setLoadingForms] = useState(false);
+  const [showExpressionHint, setShowExpressionHint] = useState(false);
+  const [expressionError, setExpressionError] = useState('');
+  const expressionInputRef = useRef(null);
 
   useEffect(() => {
     if (selectedNode) {
@@ -74,13 +77,146 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
     const currentExpr = properties.expression || '';
     const newExpr = currentExpr + fieldId;
     handlePropertyChange('expression', newExpr);
+    if (expressionInputRef.current) {
+      expressionInputRef.current.focus();
+      const len = newExpr.length;
+      expressionInputRef.current.setSelectionRange(len, len);
+    }
   };
 
   const insertOperatorToExpression = (operator) => {
     const currentExpr = properties.expression || '';
     const newExpr = currentExpr + ' ' + operator + ' ';
     handlePropertyChange('expression', newExpr);
+    if (expressionInputRef.current) {
+      expressionInputRef.current.focus();
+      const len = newExpr.length;
+      expressionInputRef.current.setSelectionRange(len, len);
+    }
   };
+
+  const validateExpression = (expr) => {
+    if (!expr || !expr.trim()) {
+      setExpressionError('');
+      return;
+    }
+    try {
+      let i = 0;
+      const len = expr.length;
+      let parenCount = 0;
+      let inString = false;
+      let stringChar = '';
+      let lastToken = '';
+      
+      while (i < len) {
+        const c = expr.charAt(i);
+        
+        if (inString) {
+          if (c === '\\' && i + 1 < len) {
+            i += 2;
+            continue;
+          }
+          if (c === stringChar) {
+            inString = false;
+            stringChar = '';
+          }
+          i++;
+          continue;
+        }
+        
+        if (c === '"' || c === "'") {
+          inString = true;
+          stringChar = c;
+          i++;
+          continue;
+        }
+        
+        if (c === '(') {
+          parenCount++;
+          i++;
+          continue;
+        }
+        if (c === ')') {
+          parenCount--;
+          if (parenCount < 0) {
+            throw new Error('多余的右括号');
+          }
+          i++;
+          continue;
+        }
+        
+        if (c === '&' && i + 1 < len && expr.charAt(i + 1) === '&') {
+          i += 2;
+          continue;
+        }
+        if (c === '|' && i + 1 < len && expr.charAt(i + 1) === '|') {
+          i += 2;
+          continue;
+        }
+        
+        if (c === '>' || c === '<' || c === '=' || c === '!') {
+          if (c === '=' && i + 1 < len && expr.charAt(i + 1) === '=') {
+            i += 2;
+            continue;
+          }
+          if (c === '!' && i + 1 < len && expr.charAt(i + 1) === '=') {
+            i += 2;
+            continue;
+          }
+          if (c === '>' && i + 1 < len && expr.charAt(i + 1) === '=') {
+            i += 2;
+            continue;
+          }
+          if (c === '<' && i + 1 < len && expr.charAt(i + 1) === '=') {
+            i += 2;
+            continue;
+          }
+          if (c === '>' || c === '<') {
+            i++;
+            continue;
+          }
+        }
+        
+        if (/\s/.test(c)) {
+          i++;
+          continue;
+        }
+        
+        if (/[a-zA-Z0-9_\-.$]/.test(c)) {
+          while (i < len && /[a-zA-Z0-9_\-.$]/.test(expr.charAt(i))) {
+            i++;
+          }
+          continue;
+        }
+        
+        if (c === '-' && i + 1 < len && /[0-9]/.test(expr.charAt(i + 1))) {
+          i++;
+          continue;
+        }
+        
+        throw new Error(`无法识别的字符: ${c}`);
+      }
+      
+      if (inString) {
+        throw new Error('字符串未闭合');
+      }
+      if (parenCount > 0) {
+        throw new Error('括号未闭合');
+      }
+      
+      setExpressionError('');
+    } catch (e) {
+      setExpressionError(e.message || '语法错误');
+    }
+  };
+
+  useEffect(() => {
+    if (selectedNode?.type === 'condition') {
+      validateExpression(properties.expression || '');
+    } else {
+      setExpressionError('');
+    }
+  }, [properties.expression, selectedNode]);
 
   const handleWorkflowFormSelect = (e) => {
     const value = e.target.value;
@@ -383,26 +519,69 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
       {selectedNode.type === 'condition' && (
         <>
           <div className="properties-section">
-            <label>条件表达式</label>
+            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>条件表达式</span>
+              <button
+                type="button"
+                className="btn btn-default"
+                style={{ 
+                  fontSize: '12px', 
+                  padding: '2px 8px', 
+                  height: 'auto',
+                  lineHeight: '1.5'
+                }}
+                onClick={() => setShowExpressionHint(!showExpressionHint)}
+              >
+                {showExpressionHint ? '收起说明' : '📖 语法说明'}
+              </button>
+            </label>
             <input
+              ref={expressionInputRef}
               type="text"
               value={properties.expression || ''}
               onChange={(e) => handlePropertyChange('expression', e.target.value)}
-              placeholder="如：amount > 1000"
-              style={{ fontFamily: 'monospace' }}
+              placeholder="如：days > 3"
+              style={{ 
+                fontFamily: 'monospace',
+                borderColor: expressionError ? '#ff4d4f' : undefined,
+                backgroundColor: expressionError ? '#fff2f0' : undefined
+              }}
             />
-            <div className="expression-hint" style={{ 
-              fontSize: '12px', 
-              color: '#8c8c8c', 
-              marginTop: '4px',
-              lineHeight: '1.8'
-            }}>
-              <strong>数字字段：</strong>直接写，如 <code>days &gt; 3</code><br/>
-              <strong>字符串字段：</strong>值要加引号，用下方显示的 value，如 <code>leaveType == "personal"</code><br/>
-              <strong>逻辑运算：</strong>支持 <code>&&</code>（且）和 <code>||</code>（或），如 <code>days &gt; 3 &amp;&amp; leaveType == "personal"</code><br/>
-              <strong>运算符：</strong>&gt;, &lt;, &gt;=, &lt;=, ==, !=
-            </div>
+            {expressionError && (
+              <div style={{
+                color: '#ff4d4f',
+                fontSize: '12px',
+                marginTop: '4px',
+                lineHeight: '1.5'
+              }}>
+                ⚠️ {expressionError}
+              </div>
+            )}
           </div>
+
+          {showExpressionHint && (
+            <div className="properties-section" style={{
+              padding: '10px 12px',
+              backgroundColor: '#fafafa',
+              borderRadius: '6px',
+              border: '1px solid #e8e8e8',
+              marginBottom: '12px'
+            }}>
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#666', 
+                lineHeight: '1.8'
+              }}>
+                <div><strong>数字字段：</strong>直接写，如 <code>days &gt; 3</code></div>
+                <div><strong>字符串字段：</strong>值加引号，如 <code>leaveType == "annual"</code></div>
+                <div><strong>逻辑运算：</strong><code>&amp;&amp;</code> 且、<code>||</code> 或</div>
+                <div><strong>运算符：</strong>&gt; &lt; &gt;= &lt;= == !=</div>
+                <div style={{ marginTop: '4px', color: '#8c8c8c' }}>
+                  💡 点击下方字段快速插入表达式
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="properties-section">
             <label>快捷运算符</label>
@@ -432,31 +611,26 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
           </div>
 
           <div className="properties-section">
-            <label>插入表单字段</label>
+            <label>可选字段</label>
             {workflowBoundFormId ? (
-              <>
-                <div style={{ 
-                  padding: '8px 12px', 
-                  backgroundColor: '#e6f7ff', 
-                  border: '1px solid #91d5ff', 
-                  borderRadius: '4px',
-                  marginBottom: '12px',
-                  fontSize: '13px',
-                  color: '#1890ff'
-                }}>
-                  ✅ 已绑定：{formName || selectedFormForFields?.name}
-                  <div style={{ fontSize: '12px', marginTop: '4px', color: '#8c8c8c' }}>
-                    流程已绑定表单，条件节点只能使用该表单的字段
-                  </div>
-                </div>
-              </>
+              <div style={{ 
+                padding: '6px 10px', 
+                backgroundColor: '#e6f7ff', 
+                border: '1px solid #91d5ff', 
+                borderRadius: '4px',
+                marginBottom: '8px',
+                fontSize: '12px',
+                color: '#1890ff'
+              }}>
+                ✅ 已绑定：{formName || selectedFormForFields?.name}
+              </div>
             ) : (
               <select
                 className="select-input"
                 value={selectedFormForFields?.id || ''}
                 onChange={(e) => handleFormForFieldsSelect(e.target.value || null)}
                 disabled={loadingForms}
-                style={{ marginBottom: '12px' }}
+                style={{ marginBottom: '8px', fontSize: '13px' }}
               >
                 <option value="">{loadingForms ? '加载中...' : '选择表单查看字段'}</option>
                 {formsList.map(form => (
@@ -467,28 +641,21 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
 
             {selectedFormForFields && (
               <div className="form-fields-list" style={{
-                maxHeight: '300px',
+                maxHeight: '220px',
                 overflowY: 'auto',
-                padding: '10px',
+                padding: '8px',
                 backgroundColor: '#fafafa',
                 borderRadius: '6px',
                 border: '1px solid #e8e8e8'
               }}>
-                <div style={{ 
-                  fontSize: '12px', 
-                  color: '#8c8c8c', 
-                  marginBottom: '12px' 
-                }}>
-                  点击字段ID插入到表达式：
-                </div>
                 {selectedFormForFields.fields?.map(field => (
-                  <div key={field.id} style={{ marginBottom: '8px' }}>
+                  <div key={field.id} style={{ marginBottom: '6px' }}>
                     <div
                       className="field-chip"
                       onClick={() => insertFieldToExpression(field.id)}
                       style={{
                         display: 'inline-block',
-                        padding: '4px 10px',
+                        padding: '3px 8px',
                         backgroundColor: '#e6f7ff',
                         border: '1px solid #91d5ff',
                         borderRadius: '4px',
@@ -502,7 +669,7 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
                       onMouseLeave={(e) => {
                         e.target.style.backgroundColor = '#e6f7ff';
                       }}
-                      title={`${field.label} (${field.type})`}
+                      title={`${field.label} (${field.type}) - 点击插入`}
                     >
                       <span style={{ fontWeight: '500', color: '#1890ff' }}>{field.label}</span>
                       <span style={{ color: '#8c8c8c', marginLeft: '4px', fontFamily: 'monospace' }}>
@@ -511,21 +678,20 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
                     </div>
                     {(field.type === 'select' || field.type === 'radio') && field.options && (
                       <div style={{ 
-                        marginTop: '4px', 
-                        marginLeft: '8px', 
+                        marginTop: '2px', 
+                        marginLeft: '4px', 
                         fontSize: '11px', 
                         color: '#8c8c8c' 
                       }}>
-                        可选值：{field.options.map(opt => 
+                        值：{field.options.map(opt => 
                           <code key={opt.value} style={{
                             backgroundColor: '#f0f0f0',
-                            padding: '1px 5px',
-                            borderRadius: '3px',
-                            marginRight: '5px',
+                            padding: '1px 4px',
+                            borderRadius: '2px',
+                            marginRight: '3px',
                             fontFamily: 'monospace'
                           }}>"{opt.value}"</code>
                         )}
-                        <span style={{ marginLeft: '5px' }}>({field.label}: {field.options.map(opt => opt.label).join('/')})</span>
                       </div>
                     )}
                   </div>
@@ -539,8 +705,8 @@ function WorkflowPropertiesPanel({ selectedNode, selectedEdge, nodes, edges, onU
             <textarea
               value={properties.description || ''}
               onChange={(e) => handlePropertyChange('description', e.target.value)}
-              placeholder="请输入条件说明"
-              rows={3}
+              placeholder="请输入条件说明（可选）"
+              rows={2}
             />
           </div>
         </>

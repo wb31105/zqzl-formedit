@@ -2,12 +2,15 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import WorkflowCanvas from '../components/WorkflowCanvas';
 import { workflowDefinitionApi } from '../services/workflowApi';
+import { useNotification } from '../context/NotificationContext';
 
 function WorkflowPreview() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [workflow, setWorkflow] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const { showError } = useNotification();
 
   useEffect(() => {
     loadWorkflow();
@@ -15,11 +18,20 @@ function WorkflowPreview() {
 
   const loadWorkflow = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const response = await workflowDefinitionApi.getDefinitionById(id);
       setWorkflow(response.data);
     } catch (error) {
       console.error('加载流程失败:', error);
+      let msg;
+      if (error.response?.status === 404) {
+        msg = '流程不存在或已被删除';
+      } else {
+        msg = '加载流程失败: ' + (error.response?.data?.error || error.message || '网络错误');
+      }
+      setLoadError(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -29,8 +41,27 @@ function WorkflowPreview() {
     return <div className="workflow-preview">加载中...</div>;
   }
 
-  if (!workflow) {
-    return <div className="workflow-preview">流程不存在</div>;
+  if (loadError || !workflow) {
+    return (
+      <div className="workflow-preview">
+        <div style={{
+          textAlign: 'center',
+          padding: '80px 20px',
+          color: '#666'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+          <h2 style={{ color: '#cf1322', marginBottom: '8px' }}>
+            {loadError || '流程不存在'}
+          </h2>
+          <p style={{ marginBottom: '24px', color: '#999' }}>
+            请检查流程ID是否正确，或返回列表选择其他流程
+          </p>
+          <button className="btn btn-primary" onClick={() => navigate('/workflows')}>
+            返回流程列表
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

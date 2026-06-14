@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { workflowDefinitionApi, workflowInstanceApi } from '../services/workflowApi';
 import { formApi } from '../services/api';
 import FieldRenderer from '../components/FieldRenderer';
+import { useNotification } from '../context/NotificationContext';
 
 function WorkflowList() {
   const [workflows, setWorkflows] = useState([]);
@@ -16,7 +17,9 @@ function WorkflowList() {
   const [instancesPage, setInstancesPage] = useState(0);
   const [instancesTotalPages, setInstancesTotalPages] = useState(0);
   const [instancesTotalElements, setInstancesTotalElements] = useState(0);
+  const [loadError, setLoadError] = useState('');
   const navigate = useNavigate();
+  const { showError, showSuccess } = useNotification();
 
   const [showStartModal, setShowStartModal] = useState(false);
   const [startingDefinitionId, setStartingDefinitionId] = useState(null);
@@ -36,6 +39,7 @@ function WorkflowList() {
 
   const loadWorkflows = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const response = await workflowDefinitionApi.getAllDefinitions({ page, size: pageSize });
       const data = response.data;
@@ -44,6 +48,9 @@ function WorkflowList() {
       setTotalElements(data.totalElements || 0);
     } catch (error) {
       console.error('加载流程列表失败:', error);
+      const msg = '加载流程列表失败: ' + (error.response?.data?.error || error.message || '网络错误');
+      setLoadError(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -51,6 +58,7 @@ function WorkflowList() {
 
   const loadInstances = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const response = await workflowInstanceApi.getAllInstances({ page: instancesPage, size: pageSize });
       const data = response.data;
@@ -59,6 +67,9 @@ function WorkflowList() {
       setInstancesTotalElements(data.totalElements || 0);
     } catch (error) {
       console.error('加载实例列表失败:', error);
+      const msg = '加载实例列表失败: ' + (error.response?.data?.error || error.message || '网络错误');
+      setLoadError(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -69,10 +80,11 @@ function WorkflowList() {
     if (window.confirm('确定要删除这个流程吗？')) {
       try {
         await workflowDefinitionApi.deleteDefinition(id);
+        showSuccess('流程删除成功');
         loadWorkflows();
       } catch (error) {
         console.error('删除流程失败:', error);
-        alert('删除失败: ' + (error.response?.data?.error || error.message));
+        showError('删除失败: ' + (error.response?.data?.error || error.message));
       }
     }
   };
@@ -82,10 +94,11 @@ function WorkflowList() {
     if (window.confirm('确定要删除这个流程实例吗？')) {
       try {
         await workflowInstanceApi.deleteInstance(id);
+        showSuccess('实例删除成功');
         loadInstances();
       } catch (error) {
         console.error('删除实例失败:', error);
-        alert('删除失败: ' + (error.response?.data?.error || error.message));
+        showError('删除失败: ' + (error.response?.data?.error || error.message));
       }
     }
   };
@@ -110,7 +123,7 @@ function WorkflowList() {
         setShowStartModal(true);
       } catch (error) {
         console.error('加载绑定表单失败:', error);
-        alert('加载绑定表单失败: ' + (error.response?.data?.error || error.message));
+        showError('加载绑定表单失败: ' + (error.response?.data?.error || error.message));
       }
     } else {
       if (window.confirm('此流程未绑定表单，是否直接启动？')) {
@@ -188,10 +201,11 @@ function WorkflowList() {
       }
       const instanceId = response.data.id;
       setShowStartModal(false);
+      showSuccess('流程启动成功');
       navigate(`/workflow/instance/${instanceId}`);
     } catch (error) {
       console.error('启动流程失败:', error);
-      alert('启动失败: ' + (error.response?.data?.error || error.message));
+      showError('启动失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setStartingInstance(false);
     }

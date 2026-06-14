@@ -35,11 +35,27 @@ function WorkflowHelp() {
         description: '根据条件判断流程走向，支持多条分支路径。无需人工干预，自动判断并流转。',
         canDelete: true,
         properties: [
-          { name: '条件表达式', desc: '用于自动判断的条件表达式，如：amount > 1000、${days} <= 3' },
+          { name: '条件表达式', desc: '用于自动判断的条件表达式，如：amount > 1000、days <= 3' },
           { name: '条件说明', desc: '对该条件的描述说明，方便其他人员理解' },
         ],
         usage: '用于需要根据审批结果或业务数据自动选择不同路径的场景。流程流转到条件分支节点时会自动判断，无需人工操作。\n\n**两种判断方式（优先级从高到低）：**\n\n1. **条件表达式判断**：如果配置了条件表达式，系统会自动解析表达式并判断结果。支持的运算符：>、<、>=、<=、==、!=。支持变量替换，如 `${node_xxx_action}` 可以获取某个节点的操作结果。\n\n2. **上一节点操作判断**：如果没有配置条件表达式，系统会自动使用上一个审批节点的操作结果（批准/拒绝）来判断路径。\n\n**连线分支类型配置：**\n每条出边必须设置分支类型，用于决定流程走向：\n- 批准路径（approve）：判断结果为"是/批准"时走此路径\n- 拒绝路径（reject）：判断结果为"否/拒绝"时走此路径\n\n连线标签仅供显示，不参与路由判断。条件分支节点必须有恰好两条出边，分别设置为"批准路径"和"拒绝路径"。',
       },
+    {
+      type: 'countersign',
+      name: '会签节点',
+      icon: '👥',
+      color: '#13c2c2',
+      description: '多人会签审批节点，需多个审批人同时审批，支持全部同意、一票否决、过半通过等规则。',
+      canDelete: true,
+      properties: [
+        { name: '审批人（多个）', desc: '多个审批人，用逗号分隔，如：张三,李四,王五' },
+        { name: '会签方式', desc: '全部同意才通过 / 一票否决 / 过半通过' },
+        { name: '操作类型', desc: '审批 / 审核 / 自定义按钮文本' },
+        { name: '意见框标题', desc: '自定义意见输入框的标题' },
+        { name: '会签说明', desc: '会签要求或说明文字' },
+      ],
+      usage: '用于需要多人共同审批的场景，如项目评审、合同会签等。流程执行到会签节点时会为每个审批人生成待办任务，根据会签规则决定最终结果。',
+    },
     {
       type: 'auto',
       name: '自动任务节点',
@@ -376,9 +392,9 @@ function WorkflowHelp() {
               <p><strong>表达式示例：</strong></p>
               <ul>
                 <li><code>amount &gt; 1000</code> - 金额大于1000走特殊审批</li>
-                <li><code>{'${days}'} &lt;= 3</code> - 请假天数小于等于3天走快速审批</li>
-                <li><code>{'${node_dept-manager_action}'} == 批准</code> - 部门经理批准后走下一步</li>
-                <li><code>type == &quot;sick&quot;</code> - 病假走特殊流程</li>
+                <li><code>days &lt;= 3</code> - 请假天数小于等于3天走快速审批</li>
+                <li><code>leaveType == &quot;annual&quot;</code> - 年假走特殊流程</li>
+                <li><code>days &gt; 3 &amp;&amp; leaveType == &quot;sick&quot;</code> - 病假且超过3天</li>
               </ul>
 
               <p style={{ marginTop: '16px', padding: '12px', backgroundColor: '#fffbe6', border: '1px solid #ffe58f', borderRadius: '4px', fontSize: '13px', lineHeight: '1.8' }}>
@@ -444,7 +460,7 @@ function WorkflowHelp() {
 {`流程：员工提交 → 条件判断 → [≤3天→部门经理审批 / >3天→总监审批]
 
 配置方式：
-1. 在条件表达式中填写：\${days} <= 3
+1. 在条件表达式中填写：days <= 3
 2. 选中指向"部门经理"的连线，分支类型选"批准路径"，标签可写"≤3天"
 3. 选中指向"总监"的连线，分支类型选"拒绝路径"，标签可写">3天"
 4. 系统自动计算请假天数，沿对应分支类型选择路径`}

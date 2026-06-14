@@ -2,6 +2,8 @@ package com.formedit.service;
 
 import com.formedit.dto.WorkflowDefinitionDto;
 import com.formedit.dto.WorkflowValidationResult;
+import com.formedit.entity.FormField;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -9,6 +11,13 @@ import java.util.stream.Collectors;
 
 @Service
 public class WorkflowValidationService {
+
+    private final FormService formService;
+
+    @Autowired
+    public WorkflowValidationService(FormService formService) {
+        this.formService = formService;
+    }
 
     public WorkflowValidationResult validateWorkflow(WorkflowDefinitionDto dto) {
         WorkflowValidationResult result = WorkflowValidationResult.success();
@@ -24,6 +33,7 @@ public class WorkflowValidationService {
         validateConditionBranches(dto, result);
         validateNodeConnections(dto, result);
         validateConditionExpressions(dto, result);
+        validateConditionExpressionFields(dto, result);
 
         return result;
     }
@@ -43,6 +53,65 @@ public class WorkflowValidationService {
                         + e.getMessage() + "，表达式=\"" + expr + "\"");
             }
         }
+    }
+
+    private void validateConditionExpressionFields(WorkflowDefinitionDto dto, WorkflowValidationResult result) {
+        if (dto.getFormId() == null) return;
+        if (dto.getNodes() == null) return;
+
+        List<FormField> formFields = formService.getFormFields(dto.getFormId());
+        if (formFields == null || formFields.isEmpty()) return;
+
+        Set<String> fieldIds = formFields.stream()
+                .map(FormField::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        for (WorkflowDefinitionDto.Node node : dto.getNodes()) {
+            if (!"condition".equals(node.getType())) continue;
+            Map<String, Object> props = node.getProperties();
+            if (props == null || props.get("expression") == null) continue;
+            String expr = props.get("expression").toString().trim();
+            if (expr.isEmpty()) continue;
+
+            try {
+                List<String> variables = extractVariables(expr);
+                List<String> invalidFields = new ArrayList<>();
+                for (String var : variables) {
+                    if (isSystemVariable(var)) continue;
+                    if (!fieldIds.contains(var)) {
+                        invalidFields.add(var);
+                    }
+                }
+                if (!invalidFields.isEmpty()) {
+                    result.addError("条件节点 \"" + node.getName() + "\" 的表达式中使用了绑定表单不存在的字段: "
+                            + String.join(", ", invalidFields)
+                            + "（请检查字段ID是否正确，或先绑定正确的表单）");
+                }
+            } catch (Exception e) {
+            }
+        }
+    }
+
+    private List<String> extractVariables(String expression) {
+        List<String> variables = new ArrayList<>();
+        List<ExpressionEvaluator.Token> tokens = ExpressionEvaluator.tokenize(expression);
+        Set<String> seen = new HashSet<>();
+        for (ExpressionEvaluator.Token token : tokens) {
+            if (token.type == ExpressionEvaluator.TokenType.IDENT) {
+                if (seen.add(token.value)) {
+                    variables.add(token.value);
+                }
+            }
+        }
+        return variables;
+    }
+
+    private boolean isSystemVariable(String varName) {
+        if (varName == null || varName.isEmpty()) return false;
+        if (varName.startsWith("node_") && varName.endsWith("_action")) return true;
+        if ("true".equalsIgnoreCase(varName) || "false".equalsIgnoreCase(varName)) return true;
+        return false;
     }
 
     private void validateStartAndEndNodes(WorkflowDefinitionDto dto, WorkflowValidationResult result) {

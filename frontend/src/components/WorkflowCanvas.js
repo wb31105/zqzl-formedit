@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { getNodeTypeConfig } from '../services/workflowApi';
 
 function WorkflowCanvas({
@@ -14,33 +14,100 @@ function WorkflowCanvas({
   onCanvasClick,
   highlightNodeIds = [],
   readOnly = false,
+  showControls = true,
 }) {
   const canvasRef = useRef(null);
+  const svgContainerRef = useRef(null);
   const [draggingNode, setDraggingNode] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [connecting, setConnecting] = useState(null);
   const [tempLine, setTempLine] = useState(null);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
   const NODE_WIDTH = 140;
   const NODE_HEIGHT = 60;
+  const PADDING = 100;
+
+  const canvasBounds = useMemo(() => {
+    if (nodes.length === 0) {
+      return { minX: 0, minY: 0, maxX: 800, maxY: 600, width: 800, height: 600 };
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(node => {
+      minX = Math.min(minX, node.x);
+      minY = Math.min(minY, node.y);
+      maxX = Math.max(maxX, node.x + NODE_WIDTH);
+      maxY = Math.max(maxY, node.y + NODE_HEIGHT);
+    });
+    minX = Math.min(0, minX - PADDING);
+    minY = Math.min(0, minY - PADDING);
+    maxX = maxX + PADDING;
+    maxY = maxY + PADDING;
+    return {
+      minX,
+      minY,
+      maxX,
+      maxY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+  }, [nodes]);
+
+  useEffect(() => {
+    if (svgContainerRef.current && scale === 1) {
+      svgContainerRef.current.scrollLeft = -canvasBounds.minX;
+      svgContainerRef.current.scrollTop = -canvasBounds.minY;
+    }
+  }, [canvasBounds.minX, canvasBounds.minY]);
+
+  const handleZoomIn = () => {
+    setScale(prev => Math.min(prev + 0.1, 2));
+  };
+
+  const handleZoomOut = () => {
+    setScale(prev => Math.max(prev - 0.1, 0.3));
+  };
+
+  const handleFitToScreen = () => {
+    if (!svgContainerRef.current) return;
+    const containerWidth = svgContainerRef.current.clientWidth - 40;
+    const containerHeight = svgContainerRef.current.clientHeight - 40;
+    const scaleX = containerWidth / canvasBounds.width;
+    const scaleY = containerHeight / canvasBounds.height;
+    const newScale = Math.min(scaleX, scaleY, 1);
+    setScale(newScale);
+  };
+
+  const handleResetZoom = () => {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  };
 
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (draggingNode) {
-        const rect = canvasRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left - dragOffset.x;
-        const y = e.clientY - rect.top - dragOffset.y;
+        const point = getSvgPoint(e.clientX, e.clientY);
+        const x = point.x - dragOffset.x;
+        const y = point.y - dragOffset.y;
         onUpdateNode({ ...draggingNode, x: Math.max(0, x), y: Math.max(0, y) });
       }
 
       if (connecting && canvasRef.current) {
-        const rect = canvasRef.current.getBoundingClientRect();
+        const point = getSvgPoint(e.clientX, e.clientY);
         setTempLine({
           x1: connecting.x,
           y1: connecting.y,
-          x2: e.clientX - rect.left,
-          y2: e.clientY - rect.top,
+          x2: point.x,
+          y2: point.y,
         });
+      }
+
+      if (isPanning && svgContainerRef.current) {
+        svgContainerRef.current.scrollLeft = panStart.scrollLeft - (e.clientX - panStart.clientX);
+        svgContainerRef.current.scrollTop = panStart.scrollTop - (e.clientY - panStart.clientY);
       }
     };
 
@@ -62,30 +129,75 @@ function WorkflowCanvas({
         setConnecting(null);
         setTempLine(null);
       }
+
+      if (isPanning) {
+        setIsPanning(false);
+      }
+    };
+
+    const handleWheel = (e) => {
+      if (!svgContainerRef.current) return;
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        setScale(prev => {
+          const newScale = Math.max(0.3, Math.min(2, prev + delta));
+          return newScale;
+        });
+      }
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    const container = svgContainerRef.current;
+    if (container) {
+      container.addEventListener('wheel', handleWheel, { passive: false });
+    }
 
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      if (container) {
+        container.removeEventListener('wheel', handleWheel);
+      }
     };
-  }, [draggingNode, dragOffset, connecting, edges, onUpdateNode, onAddEdge]);
+  }, [draggingNode, dragOffset, connecting, edges, onUpdateNode, onAddEdge, isPanning, panStart, scale]);
+
+  const getSvgPoint = (clientX, clientY) => {
+    if (!svgContainerRef.current || !canvasRef.current) {
+      return { x: clientX, y: clientY };
+    }
+    const containerRect = svgContainerRef.current.getBoundingClientRect();
+    const scrollLeft = svgContainerRef.current.scrollLeft;
+    const scrollTop = svgContainerRef.current.scrollTop;
+    const x = (clientX - containerRect.left + scrollLeft) / scale;
+    const y = (clientY - containerRect.top + scrollTop) / scale;
+    return { x, y };
+  };
 
   const findNodeAtPosition = (clientX, clientY) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    const point = getSvgPoint(clientX, clientY);
 
     return nodes.find((node) => {
       return (
-        x >= node.x &&
-        x <= node.x + NODE_WIDTH &&
-        y >= node.y &&
-        y <= node.y + NODE_HEIGHT
+        point.x >= node.x &&
+        point.x <= node.x + NODE_WIDTH &&
+        point.y >= node.y &&
+        point.y <= node.y + NODE_HEIGHT
       );
     });
+  };
+
+  const handleCanvasMouseDown = (e) => {
+    if (readOnly && e.button === 0) {
+      setIsPanning(true);
+      setPanStart({
+        clientX: e.clientX,
+        clientY: e.clientY,
+        scrollLeft: svgContainerRef.current.scrollLeft,
+        scrollTop: svgContainerRef.current.scrollTop,
+      });
+    }
   };
 
   const handleDragOver = (e) => {
@@ -100,9 +212,9 @@ function WorkflowCanvas({
     const nodeName = e.dataTransfer.getData('nodeName');
 
     if (nodeType) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left - NODE_WIDTH / 2;
-      const y = e.clientY - rect.top - NODE_HEIGHT / 2;
+      const point = getSvgPoint(e.clientX, e.clientY);
+      const x = point.x - NODE_WIDTH / 2;
+      const y = point.y - NODE_HEIGHT / 2;
       onAddNode(nodeType, nodeName, Math.max(0, x), Math.max(0, y));
     }
   };
@@ -113,10 +225,10 @@ function WorkflowCanvas({
     e.stopPropagation();
     onSelectNode(node.id);
 
-    const rect = canvasRef.current.getBoundingClientRect();
+    const point = getSvgPoint(e.clientX, e.clientY);
     setDragOffset({
-      x: e.clientX - rect.left - node.x,
-      y: e.clientY - rect.top - node.y,
+      x: point.x - node.x,
+      y: point.y - node.y,
     });
     setDraggingNode(node);
   };
@@ -131,7 +243,7 @@ function WorkflowCanvas({
   const handleConnectorMouseDown = (e, node) => {
     if (readOnly) return;
     e.stopPropagation();
-    const rect = canvasRef.current.getBoundingClientRect();
+    e.preventDefault();
     setConnecting({
       nodeId: node.id,
       x: node.x + NODE_WIDTH,
@@ -265,45 +377,99 @@ function WorkflowCanvas({
   };
 
   return (
-    <div
-      ref={canvasRef}
-      className="workflow-canvas"
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-      onClick={onCanvasClick}
-    >
-      <svg width="100%" height="100%" style={{ minHeight: '600px' }}>
-        <defs>
-          <marker
-            id="arrowhead"
-            markerWidth="10"
-            markerHeight="7"
-            refX="9"
-            refY="3.5"
-            orient="auto"
+    <div className="workflow-canvas-wrapper">
+      {showControls && (
+        <div className="canvas-controls">
+          <button
+            className="canvas-control-btn"
+            onClick={handleZoomIn}
+            title="放大"
+            disabled={scale >= 2}
           >
-            <polygon points="0 0, 10 3.5, 0 7" fill="#999" />
-          </marker>
-          <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f0f0f0" strokeWidth="1" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
+            +
+          </button>
+          <div className="canvas-scale-info">
+            {Math.round(scale * 100)}%
+          </div>
+          <button
+            className="canvas-control-btn"
+            onClick={handleZoomOut}
+            title="缩小"
+            disabled={scale <= 0.3}
+          >
+            −
+          </button>
+          <button
+            className="canvas-control-btn"
+            onClick={handleFitToScreen}
+            title="适应窗口"
+          >
+            ⛶
+          </button>
+          <button
+            className="canvas-control-btn"
+            onClick={handleResetZoom}
+            title="重置缩放"
+          >
+            ↺
+          </button>
+        </div>
+      )}
+      <div
+        ref={svgContainerRef}
+        className="workflow-canvas-scroll"
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onMouseDown={handleCanvasMouseDown}
+        style={{ cursor: isPanning ? 'grabbing' : (readOnly ? 'grab' : 'default') }}
+      >
+        <div
+          ref={canvasRef}
+          className="workflow-canvas"
+          onClick={onCanvasClick}
+          style={{
+            width: canvasBounds.width,
+            height: canvasBounds.height,
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+          }}
+        >
+          <svg width={canvasBounds.width} height={canvasBounds.height}>
+            <defs>
+              <marker
+                id="arrowhead"
+                markerWidth="10"
+                markerHeight="7"
+                refX="9"
+                refY="3.5"
+                orient="auto"
+              >
+                <polygon points="0 0, 10 3.5, 0 7" fill="#999" />
+              </marker>
+              <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f0f0f0" strokeWidth="1" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
 
-        {edges.map(renderEdge)}
+            <g transform={`translate(${-canvasBounds.minX}, ${-canvasBounds.minY})`}>
+              {edges.map(renderEdge)}
 
-        {tempLine && (
-          <path
-            d={`M ${tempLine.x1} ${tempLine.y1} C ${(tempLine.x1 + tempLine.x2) / 2} ${tempLine.y1}, ${(tempLine.x1 + tempLine.x2) / 2} ${tempLine.y2}, ${tempLine.x2} ${tempLine.y2}`}
-            fill="none"
-            stroke="#1890ff"
-            strokeWidth="2"
-            strokeDasharray="5,5"
-          />
-        )}
+              {tempLine && (
+                <path
+                  d={`M ${tempLine.x1} ${tempLine.y1} C ${(tempLine.x1 + tempLine.x2) / 2} ${tempLine.y1}, ${(tempLine.x1 + tempLine.x2) / 2} ${tempLine.y2}, ${tempLine.x2} ${tempLine.y2}`}
+                  fill="none"
+                  stroke="#1890ff"
+                  strokeWidth="2"
+                  strokeDasharray="5,5"
+                />
+              )}
 
-        {nodes.map(renderNode)}
-      </svg>
+              {nodes.map(renderNode)}
+            </g>
+          </svg>
+        </div>
+      </div>
     </div>
   );
 }

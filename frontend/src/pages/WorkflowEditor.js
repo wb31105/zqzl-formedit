@@ -7,6 +7,7 @@ import WorkflowPropertiesPanel from '../components/WorkflowPropertiesPanel';
 import FieldRenderer from '../components/FieldRenderer';
 import { workflowDefinitionApi, workflowInstanceApi, getNodeTypeConfig } from '../services/workflowApi';
 import { formApi } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
 
 function WorkflowEditor() {
   const { id } = useParams();
@@ -23,12 +24,14 @@ function WorkflowEditor() {
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
   const [isNewFlag, setIsNewFlag] = useState(id === 'new');
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedEdge, setSelectedEdge] = useState(null);
+  const { showError, showSuccess, showWarning } = useNotification();
 
   const [showStartModal, setShowStartModal] = useState(false);
   const [selectedStartForm, setSelectedStartForm] = useState(null);
@@ -107,6 +110,7 @@ function WorkflowEditor() {
 
   const loadWorkflow = async (workflowId) => {
     setLoading(true);
+    setLoadError('');
     try {
       const response = await workflowDefinitionApi.getDefinitionById(workflowId);
       const data = response.data;
@@ -120,7 +124,14 @@ function WorkflowEditor() {
       setIsNewFlag(false);
     } catch (error) {
       console.error('加载流程失败:', error);
-      alert('加载流程失败');
+      let msg = '加载流程失败: ';
+      if (error.response?.status === 404) {
+        msg = '流程不存在或已被删除';
+      } else {
+        msg += error.response?.data?.error || error.message || '网络错误';
+      }
+      setLoadError(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -151,7 +162,7 @@ function WorkflowEditor() {
 
     const config = getNodeTypeConfig(node.type);
     if (!config.canDelete) {
-      alert('开始节点和结束节点不能删除');
+      showWarning('开始节点和结束节点不能删除');
       return;
     }
 
@@ -201,18 +212,20 @@ function WorkflowEditor() {
       const response = await workflowDefinitionApi.validateDefinition({
         name,
         description,
+        formId,
         nodes,
         edges,
       });
       const result = response.data;
       if (result.valid) {
-        alert('流程验证通过！');
+        showSuccess('流程验证通过！');
       } else {
         setValidationErrors(result.errors || []);
+        showWarning('流程验证未通过，请检查下方错误列表');
       }
     } catch (error) {
       console.error('验证失败:', error);
-      alert('验证失败: ' + (error.response?.data?.error || error.message));
+      showError('验证失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setValidating(false);
     }
@@ -220,7 +233,7 @@ function WorkflowEditor() {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      alert('请输入流程名称');
+      showWarning('请输入流程名称');
       return;
     }
 
@@ -233,16 +246,16 @@ function WorkflowEditor() {
         const newId = response.data.id;
         setCurrentDefinitionId(newId);
         setIsNewFlag(false);
-        alert('保存成功！');
+        showSuccess('保存成功！');
         navigate(`/workflow/editor/${newId}`, { replace: true });
       } else {
         const defIdToSave = currentDefinitionId || id;
         await workflowDefinitionApi.updateDefinition(defIdToSave, data);
-        alert('保存成功！');
+        showSuccess('保存成功！');
       }
     } catch (error) {
       console.error('保存失败:', error);
-      alert('保存失败: ' + (error.response?.data?.error || error.message));
+      showError('保存失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setSaving(false);
     }
@@ -265,7 +278,7 @@ function WorkflowEditor() {
           setShowStartModal(true);
         } catch (error) {
           console.error('加载表单失败:', error);
-          alert('加载表单失败');
+          showError('加载表单失败: ' + (error.response?.data?.error || error.message));
         }
       } else {
         if (window.confirm('此流程未绑定表单，是否直接启动？')) {
@@ -344,10 +357,11 @@ function WorkflowEditor() {
       }
       const instanceId = response.data.id;
       setShowStartModal(false);
+      showSuccess('流程启动成功');
       navigate(`/workflow/instance/${instanceId}`);
     } catch (error) {
       console.error('启动流程失败:', error);
-      alert('启动失败: ' + (error.response?.data?.error || error.message));
+      showError('启动失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setStartingInstance(false);
     }

@@ -26,8 +26,6 @@ public class WorkflowInstanceService {
 
     private static final java.util.concurrent.ConcurrentHashMap<String, Object> NODE_LOCKS =
             new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.Set<String> FINALIZED_NODES =
-            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private final WorkflowInstanceRepository instanceRepository;
     private final WorkflowTaskRepository taskRepository;
@@ -184,63 +182,16 @@ public class WorkflowInstanceService {
                 countersignType = csProps.get("countersignType").toString();
             }
 
-            boolean shouldFinalize = false;
-            String countersignResult = null;
-
-            if ("veto".equals(countersignType) && "reject".equals(action)) {
-                shouldFinalize = true;
-                countersignResult = "reject";
-            } else if ("all".equals(countersignType) && "reject".equals(action)) {
-                shouldFinalize = true;
-                countersignResult = "reject";
-            }
-
-            List<WorkflowTask> pendingTasks = taskRepository.findByInstanceIdAndNodeIdAndStatusOrderByIdAsc(instanceId, currentNode.getId(), "PENDING");
-            List<WorkflowTask> allNodeTasks = taskRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instanceId, currentNode.getId());
-            long totalApprovers = allNodeTasks.size();
-
-            long approveCount = 0;
-            long rejectCount = 0;
-            for (WorkflowTask t : allNodeTasks) {
-                if ("COMPLETED".equals(t.getStatus()) && t.getAction() != null) {
-                    if ("approve".equals(t.getAction())) {
-                        approveCount++;
-                    } else {
-                        rejectCount++;
-                    }
-                }
-            }
-            long completedCount = approveCount + rejectCount;
-
-            if ("majority".equals(countersignType) && pendingTasks != null && !pendingTasks.isEmpty()) {
-                long remainingPending = pendingTasks.size();
-                if (approveCount > totalApprovers / 2) {
-                    shouldFinalize = true;
-                    countersignResult = "approve";
-                } else if (approveCount + remainingPending <= totalApprovers / 2) {
-                    shouldFinalize = true;
-                    countersignResult = "reject";
-                }
+            if (!currentNode.getId().equals(instance.getCurrentNodeId())) {
+                return instance;
             }
 
             String finalizeKey = instanceId + "_" + currentNode.getId();
-
-            if (FINALIZED_NODES.contains(finalizeKey)) {
-                return instance;
-            }
-            if (isCountersignFinalized(instanceId, currentNode.getId())) {
-                FINALIZED_NODES.add(finalizeKey);
-                return instance;
-            }
-
             Object lock = NODE_LOCKS.computeIfAbsent(finalizeKey, k -> new Object());
             synchronized (lock) {
-                if (FINALIZED_NODES.contains(finalizeKey)) {
-                    return instance;
-                }
-                if (isCountersignFinalized(instanceId, currentNode.getId())) {
-                    FINALIZED_NODES.add(finalizeKey);
-                    return instance;
+                WorkflowInstance freshInstance = instanceRepository.findById(instanceId).orElse(instance);
+                if (!currentNode.getId().equals(freshInstance.getCurrentNodeId())) {
+                    return freshInstance;
                 }
 
                 List<WorkflowTask> freshPendingTasks =
@@ -285,7 +236,6 @@ public class WorkflowInstanceService {
                 }
 
                 if (doFinalize) {
-                    FINALIZED_NODES.add(finalizeKey);
                     if (freshPendingTasks != null) {
                         for (WorkflowTask pendingTask : freshPendingTasks) {
                             pendingTask.setStatus("CANCELLED");
@@ -296,7 +246,8 @@ public class WorkflowInstanceService {
                     }
                     addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
                             "会签结果: " + ("approve".equals(finalResult) ? "通过" : "拒绝"), null);
-                    proceedToNextNode(instance, definition, currentNode, finalResult);
+                    proceedToNextNode(freshInstance, definition, currentNode, finalResult);
+                    return freshInstance;
                 } else {
                     addExecutionLog(instanceId, currentNode.getId(), currentNode.getName(), "countersign",
                             "等待其他审批人...", "剩余 " + freshPendingTasks.size() + " 人未审批");
@@ -353,16 +304,6 @@ public class WorkflowInstanceService {
                 }
                 return "reject";
         }
-    }
-
-    private boolean isCountersignFinalized(Long instanceId, String nodeId) {
-        List<WorkflowExecutionLog> nodeLogs = executionLogRepository.findByInstanceIdAndNodeIdOrderByIdAsc(instanceId, nodeId);
-        for (WorkflowExecutionLog log : nodeLogs) {
-            if (log.getAction() != null && log.getAction().startsWith("会签结果:")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private String getCountersignTypeDescription(String countersignType) {

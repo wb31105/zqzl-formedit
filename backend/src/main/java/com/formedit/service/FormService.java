@@ -147,6 +147,13 @@ public class FormService {
         }
     }
 
+    public List<FormField> getFormFields(Long formId) {
+        if (formId == null) return new ArrayList<>();
+        Optional<Form> formOpt = formRepository.findById(formId);
+        if (!formOpt.isPresent()) return new ArrayList<>();
+        return parseFieldsFromJson(formOpt.get().getFieldsJson());
+    }
+
     private List<FormField> parseFieldsFromJson(String json) {
         if (json == null || json.isEmpty()) return new ArrayList<>();
         try {
