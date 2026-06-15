@@ -9,6 +9,7 @@ import {
   getNodeTypeConfig,
 } from '../services/workflowApi';
 import { useNotification } from '../context/NotificationContext';
+import PageError from '../components/PageError';
 
 function WorkflowInstance() {
   const params = useParams();
@@ -17,10 +18,12 @@ function WorkflowInstance() {
   const [definition, setDefinition] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [startError, setStartError] = useState('');
   const [processingTaskId, setProcessingTaskId] = useState(null);
   const [comments, setComments] = useState({});
   const [form, setForm] = useState(null);
-  const { showError, showSuccess, showConfirm } = useNotification();
+  const [formLoadError, setFormLoadError] = useState('');
+  const { showConfirm, setAlert, clearAlert } = useNotification();
 
   const id = params.id;
   const definitionId = params.definitionId;
@@ -34,9 +37,15 @@ function WorkflowInstance() {
     }
   }, [id, definitionId]);
 
+  useEffect(() => {
+    return () => clearAlert();
+  }, []);
+
   const startNewInstance = async () => {
     setLoading(true);
+    setStartError('');
     setLoadError('');
+    clearAlert();
     try {
       const response = await workflowInstanceApi.startInstance(definitionId);
       setInstance(response.data);
@@ -45,15 +54,21 @@ function WorkflowInstance() {
         try {
           const formResponse = await formApi.getFormById(response.data.formId);
           setForm(formResponse.data);
+          setFormLoadError('');
         } catch (formError) {
           console.error('加载表单详情失败:', formError);
+          setFormLoadError('表单数据加载失败: ' + (formError.response?.data?.error || formError.message));
         }
       }
     } catch (error) {
       console.error('启动流程失败:', error);
-      const msg = '启动失败: ' + (error.response?.data?.error || error.message);
-      setLoadError(msg);
-      navigate('/workflows');
+      let msg;
+      if (error.response?.status === 404) {
+        msg = '流程不存在或已被删除';
+      } else {
+        msg = '启动失败: ' + (error.response?.data?.error || error.message || '网络错误');
+      }
+      setStartError(msg);
     } finally {
       setLoading(false);
     }
@@ -62,6 +77,7 @@ function WorkflowInstance() {
   const loadInstance = async () => {
     setLoading(true);
     setLoadError('');
+    clearAlert();
     try {
       const response = await workflowInstanceApi.getInstanceById(id);
       setInstance(response.data);
@@ -70,8 +86,10 @@ function WorkflowInstance() {
         try {
           const formResponse = await formApi.getFormById(response.data.formId);
           setForm(formResponse.data);
+          setFormLoadError('');
         } catch (formError) {
           console.error('加载表单详情失败:', formError);
+          setFormLoadError('表单数据加载失败: ' + (formError.response?.data?.error || formError.message));
         }
       }
     } catch (error) {
@@ -187,10 +205,10 @@ function WorkflowInstance() {
         delete newComments[task.id];
         return newComments;
       });
-      showSuccess('操作成功');
+      setAlert('success', '操作成功', 3000);
     } catch (error) {
       console.error('处理任务失败:', error);
-      showError('处理失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '处理失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setProcessingTaskId(null);
     }
@@ -246,35 +264,30 @@ function WorkflowInstance() {
     return <div className="workflow-instance">加载中...</div>;
   }
 
+  if (startError) {
+    return (
+      <div className="workflow-instance">
+        <PageError
+          title="启动失败"
+          message={startError}
+          onRetry={() => startNewInstance()}
+          backTo="/workflows"
+          backText="返回流程列表"
+        />
+      </div>
+    );
+  }
+
   if (loadError || !instance || !definition) {
     return (
       <div className="workflow-instance">
-        <div style={{
-          textAlign: 'center',
-          padding: '80px 20px',
-          color: '#666',
-          maxWidth: '600px',
-          margin: '0 auto'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
-          <h2 style={{ color: '#cf1322', marginBottom: '8px' }}>
-            {loadError || '数据加载失败'}
-          </h2>
-          <p style={{ marginBottom: '24px', color: '#999' }}>
-            {!instance ? '流程实例不存在或加载出错，请检查ID是否正确' : '流程定义加载失败'}
-          </p>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            <button 
-              className="btn btn-primary" 
-              onClick={() => window.location.reload()}
-            >
-              重新加载
-            </button>
-            <button className="btn btn-default" onClick={() => navigate('/workflows')}>
-              返回流程列表
-            </button>
-          </div>
-        </div>
+        <PageError
+          title="加载失败"
+          message={loadError || '数据加载失败'}
+          onRetry={isNewInstance ? () => startNewInstance() : () => loadInstance()}
+          backTo="/workflows"
+          backText="返回流程列表"
+        />
       </div>
     );
   }
@@ -320,6 +333,11 @@ function WorkflowInstance() {
         </div>
 
         <div className="instance-side-panel">
+          {formLoadError && (
+            <div className="form-error-banner" style={{ marginBottom: '16px' }}>
+              ⚠️ {formLoadError}
+            </div>
+          )}
           {form && instance.formData && (
             <div className="form-data-panel" style={{
               backgroundColor: '#f0f5ff',

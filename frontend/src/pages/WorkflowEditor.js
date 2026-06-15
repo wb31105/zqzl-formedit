@@ -8,6 +8,7 @@ import FieldRenderer from '../components/FieldRenderer';
 import { workflowDefinitionApi, workflowInstanceApi, getNodeTypeConfig } from '../services/workflowApi';
 import { formApi } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
+import PageError from '../components/PageError';
 
 function WorkflowEditor() {
   const { id } = useParams();
@@ -31,7 +32,11 @@ function WorkflowEditor() {
   const [isNewFlag, setIsNewFlag] = useState(id === 'new');
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedEdge, setSelectedEdge] = useState(null);
-  const { showError, showSuccess, showWarning, showConfirm } = useNotification();
+  const { showConfirm, setAlert, clearAlert } = useNotification();
+
+  useEffect(() => {
+    return () => clearAlert();
+  }, []);
 
   const [showStartModal, setShowStartModal] = useState(false);
   const [selectedStartForm, setSelectedStartForm] = useState(null);
@@ -161,7 +166,7 @@ function WorkflowEditor() {
 
     const config = getNodeTypeConfig(node.type);
     if (!config.canDelete) {
-      showWarning('开始节点和结束节点不能删除');
+      setAlert('warning', '开始节点和结束节点不能删除', 3000);
       return;
     }
 
@@ -207,6 +212,7 @@ function WorkflowEditor() {
   const handleValidate = async () => {
     setValidating(true);
     setValidationErrors([]);
+    clearAlert();
     try {
       const response = await workflowDefinitionApi.validateDefinition({
         name,
@@ -217,14 +223,14 @@ function WorkflowEditor() {
       });
       const result = response.data;
       if (result.valid) {
-        showSuccess('流程验证通过！');
+        setAlert('success', '流程验证通过！', 3000);
       } else {
         setValidationErrors(result.errors || []);
-        showWarning('流程验证未通过，请检查下方错误列表');
+        setAlert('warning', '流程验证未通过，请检查下方错误列表');
       }
     } catch (error) {
       console.error('验证失败:', error);
-      showError('验证失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '验证失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setValidating(false);
     }
@@ -232,11 +238,12 @@ function WorkflowEditor() {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      showWarning('请输入流程名称');
+      setAlert('warning', '请输入流程名称');
       return;
     }
 
     setSaving(true);
+    clearAlert();
     try {
       const data = { name, description, formId, nodes, edges };
 
@@ -245,16 +252,16 @@ function WorkflowEditor() {
         const newId = response.data.id;
         setCurrentDefinitionId(newId);
         setIsNewFlag(false);
-        showSuccess('保存成功！');
+        setAlert('success', '保存成功！', 3000);
         navigate(`/workflow/editor/${newId}`, { replace: true });
       } else {
         const defIdToSave = currentDefinitionId || id;
         await workflowDefinitionApi.updateDefinition(defIdToSave, data);
-        showSuccess('保存成功！');
+        setAlert('success', '保存成功！', 3000);
       }
     } catch (error) {
       console.error('保存失败:', error);
-      showError('保存失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '保存失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setSaving(false);
     }
@@ -277,7 +284,7 @@ function WorkflowEditor() {
           setShowStartModal(true);
         } catch (error) {
           console.error('加载表单失败:', error);
-          showError('加载表单失败: ' + (error.response?.data?.error || error.message));
+          setAlert('error', '加载表单失败: ' + (error.response?.data?.error || error.message));
         }
       } else {
         const confirmed = await showConfirm('此流程未绑定表单，是否直接启动？', '启动确认');
@@ -357,11 +364,11 @@ function WorkflowEditor() {
       }
       const instanceId = response.data.id;
       setShowStartModal(false);
-      showSuccess('流程启动成功');
+      setAlert('success', '流程启动成功', 3000);
       navigate(`/workflow/instance/${instanceId}`);
     } catch (error) {
       console.error('启动流程失败:', error);
-      showError('启动失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '启动失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setStartingInstance(false);
     }
@@ -389,31 +396,13 @@ function WorkflowEditor() {
   if (loadError) {
     return (
       <div className="workflow-editor">
-        <div style={{
-          textAlign: 'center',
-          padding: '80px 20px',
-          color: '#666',
-          maxWidth: '600px',
-          margin: '0 auto'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
-          <h2 style={{ color: '#cf1322', marginBottom: '8px' }}>
-            加载流程失败
-          </h2>
-          <p style={{ marginBottom: '16px', color: '#666', lineHeight: '1.6' }}>
-            {loadError}
-          </p>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            {!isNewFlag && currentDefinitionId && (
-              <button className="btn btn-primary" onClick={() => loadWorkflow(currentDefinitionId)}>
-                重新加载
-              </button>
-            )}
-            <button className="btn btn-default" onClick={() => navigate('/workflows')}>
-              返回流程列表
-            </button>
-          </div>
-        </div>
+        <PageError
+          title="加载失败"
+          message={loadError}
+          onRetry={!isNewFlag && currentDefinitionId ? () => loadWorkflow(currentDefinitionId) : null}
+          backTo="/workflows"
+          backText="返回流程列表"
+        />
       </div>
     );
   }

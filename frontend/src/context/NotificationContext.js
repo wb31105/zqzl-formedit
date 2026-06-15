@@ -14,6 +14,7 @@ export const useNotification = () => {
 export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
+  const [pageAlert, setPageAlert] = useState(null);
 
   const addNotification = useCallback((type, message, duration = 3000) => {
     const id = Date.now() + Math.random();
@@ -56,6 +57,25 @@ export const NotificationProvider = ({ children }) => {
     });
   }, []);
 
+  const setAlert = useCallback((type, message, duration = 0) => {
+    const id = Date.now() + Math.random();
+    setPageAlert({ id, type, message });
+    if (duration > 0) {
+      setTimeout(() => {
+        setPageAlert(prev => prev && prev.id === id ? null : prev);
+      }, duration);
+    }
+    return id;
+  }, []);
+
+  const clearAlert = useCallback((id) => {
+    if (id) {
+      setPageAlert(prev => prev && prev.id === id ? null : prev);
+    } else {
+      setPageAlert(null);
+    }
+  }, []);
+
   const handleConfirmOk = useCallback(() => {
     if (confirmState) {
       confirmState.resolve(true);
@@ -77,11 +97,28 @@ export const NotificationProvider = ({ children }) => {
     showWarning,
     showConfirm,
     removeNotification,
+    setAlert,
+    clearAlert,
+    pageAlert,
   };
 
   return (
     <NotificationContext.Provider value={value}>
       {children}
+      {pageAlert && (
+        <div className="page-alert-container">
+          <div className={`page-alert page-alert-${pageAlert.type}`}>
+            <span className="page-alert-icon">
+              {pageAlert.type === 'error' && '✕'}
+              {pageAlert.type === 'success' && '✓'}
+              {pageAlert.type === 'info' && 'ℹ'}
+              {pageAlert.type === 'warning' && '⚠'}
+            </span>
+            <span className="page-alert-message">{pageAlert.message}</span>
+            <span className="page-alert-close" onClick={() => clearAlert()}>×</span>
+          </div>
+        </div>
+      )}
       <div className="notification-container">
         {notifications.map(notification => (
           <div

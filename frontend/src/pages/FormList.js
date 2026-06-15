@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formApi } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
+import PageError from '../components/PageError';
 
 function FormList() {
   const [forms, setForms] = useState([]);
@@ -11,14 +13,22 @@ function FormList() {
   const [totalElements, setTotalElements] = useState(0);
   const [searchName, setSearchName] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [loadError, setLoadError] = useState('');
   const navigate = useNavigate();
+  const { showConfirm, setAlert, clearAlert } = useNotification();
 
   useEffect(() => {
     loadForms();
   }, [page, searchName]);
 
+  useEffect(() => {
+    return () => clearAlert();
+  }, []);
+
   const loadForms = async () => {
     setLoading(true);
+    setLoadError('');
+    clearAlert();
     try {
       const params = { page, size: pageSize };
       if (searchName) {
@@ -31,6 +41,8 @@ function FormList() {
       setTotalElements(data.totalElements || 0);
     } catch (error) {
       console.error('加载表单列表失败:', error);
+      const msg = '加载表单列表失败: ' + (error.response?.data?.error || error.message || '网络错误');
+      setLoadError(msg);
     } finally {
       setLoading(false);
     }
@@ -55,12 +67,15 @@ function FormList() {
 
   const handleDelete = async (id, e) => {
     e.stopPropagation();
-    if (window.confirm('确定要删除这个表单吗？')) {
+    const confirmed = await showConfirm('确定要删除这个表单吗？删除后无法恢复。', '删除表单');
+    if (confirmed) {
       try {
         await formApi.deleteForm(id);
+        setAlert('success', '表单删除成功', 3000);
         loadForms();
       } catch (error) {
         console.error('删除表单失败:', error);
+        setAlert('error', '删除失败: ' + (error.response?.data?.error || error.message));
       }
     }
   };
@@ -132,6 +147,20 @@ function FormList() {
 
   if (loading && forms.length === 0) {
     return <div className="form-list-container">加载中...</div>;
+  }
+
+  if (loadError) {
+    return (
+      <div className="form-list-container">
+        <PageError
+          title="加载失败"
+          message={loadError}
+          onRetry={loadForms}
+          backTo="/"
+          backText="返回首页"
+        />
+      </div>
+    );
   }
 
   return (

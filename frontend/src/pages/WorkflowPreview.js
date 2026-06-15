@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import WorkflowCanvas from '../components/WorkflowCanvas';
-import { workflowDefinitionApi } from '../services/workflowApi';
+import FieldRenderer from '../components/FieldRenderer';
+import { workflowDefinitionApi, workflowInstanceApi } from '../services/workflowApi';
+import { formApi } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
+import PageError from '../components/PageError';
 
 function WorkflowPreview() {
   const { id } = useParams();
@@ -10,15 +13,26 @@ function WorkflowPreview() {
   const [workflow, setWorkflow] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const { showError } = useNotification();
+  const { showConfirm, setAlert, clearAlert } = useNotification();
+
+  const [showStartModal, setShowStartModal] = useState(false);
+  const [selectedForm, setSelectedForm] = useState(null);
+  const [formData, setFormData] = useState({});
+  const [formErrors, setFormErrors] = useState({});
+  const [startingInstance, setStartingInstance] = useState(false);
 
   useEffect(() => {
     loadWorkflow();
   }, [id]);
 
+  useEffect(() => {
+    return () => clearAlert();
+  }, []);
+
   const loadWorkflow = async () => {
     setLoading(true);
     setLoadError('');
+    clearAlert();
     try {
       const response = await workflowDefinitionApi.getDefinitionById(id);
       setWorkflow(response.data);
@@ -36,6 +50,125 @@ function WorkflowPreview() {
     }
   };
 
+  const handleStartInstance = async (e) => {
+    e.stopPropagation();
+    if (!workflow) return;
+
+    const boundFormId = workflow.formId;
+
+    if (boundFormId) {
+      try {
+        const response = await formApi.getFormById(boundFormId);
+        setSelectedForm(response.data);
+        setFormData({});
+        setFormErrors({});
+        setShowStartModal(true);
+      } catch (error) {
+        console.error('加载绑定表单失败:', error);
+        setAlert('error', '加载绑定表单失败: ' + (error.response?.data?.error || error.message));
+      }
+    } else {
+      const confirmed = await showConfirm('此流程未绑定表单，是否直接启动？', '启动确认');
+      if (confirmed) {
+        navigate(`/workflow/instance/new/${id}`);
+      }
+    }
+  };
+
+  const handleFormFieldChange = (fieldId, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [fieldId]: value
+    }));
+    if (formErrors[fieldId]) {
+      setFormErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[fieldId];
+        return newErrors;
+      });
+    }
+  };
+
+  const validateForm = () => {
+    if (!selectedForm) return true;
+    const errors = {};
+    selectedForm.fields?.forEach(field => {
+      const value = formData[field.id];
+      const stringValue = value ? String(value).trim() : '';
+      const isEmpty = value === null || value === undefined || value === '' ||
+        (Array.isArray(value) && value.length === 0) || stringValue === '';
+
+      if (field.required && isEmpty) {
+        errors[field.id] = `${field.label}不能为空`;
+        return;
+      }
+
+      if (isEmpty) return;
+
+      const isTextLike = ['text', 'textarea', 'email', 'number'].includes(field.type);
+
+      if (isTextLike && field.minLength && stringValue.length < field.minLength) {
+        errors[field.id] = `${field.label}最少需要${field.minLength}个字符`;
+      }
+
+      if (isTextLike && field.maxLength && stringValue.length > field.maxLength) {
+        errors[field.id] = `${field.label}最多允许${field.maxLength}个字符`;
+      }
+
+      if (field.pattern && field.pattern.trim() && stringValue) {
+        try {
+          const regex = new RegExp(field.pattern);
+          if (!regex.test(stringValue)) {
+            errors[field.id] = field.patternMessage || `${field.label}格式不正确`;
+          }
+        } catch (e) {
+          console.error('正则表达式错误:', e);
+        }
+      }
+    });
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const doStartInstance = async () => {
+    setStartingInstance(true);
+    try {
+      let response;
+      if (workflow.formId) {
+        response = await workflowInstanceApi.startInstanceWithForm(id, {
+          formId: workflow.formId,
+          formData: formData
+        });
+      } else {
+        response = await workflowInstanceApi.startInstance(id);
+      }
+      const instanceId = response.data.id;
+      setShowStartModal(false);
+      setAlert('success', '流程启动成功', 3000);
+      navigate(`/workflow/instance/${instanceId}`);
+    } catch (error) {
+      console.error('启动流程失败:', error);
+      setAlert('error', '启动失败: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setStartingInstance(false);
+    }
+  };
+
+  const handleConfirmStart = () => {
+    if (workflow.formId && selectedForm) {
+      if (!validateForm()) {
+        return;
+      }
+    }
+    doStartInstance();
+  };
+
+  const handleCloseModal = () => {
+    if (!startingInstance) {
+      setShowStartModal(false);
+    }
+  };
+
   if (loading) {
     return <div className="workflow-preview">加载中...</div>;
   }
@@ -43,22 +176,13 @@ function WorkflowPreview() {
   if (loadError || !workflow) {
     return (
       <div className="workflow-preview">
-        <div style={{
-          textAlign: 'center',
-          padding: '80px 20px',
-          color: '#666'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
-          <h2 style={{ color: '#cf1322', marginBottom: '8px' }}>
-            {loadError || '流程不存在'}
-          </h2>
-          <p style={{ marginBottom: '24px', color: '#999' }}>
-            请检查流程ID是否正确，或返回列表选择其他流程
-          </p>
-          <button className="btn btn-primary" onClick={() => navigate('/workflows')}>
-            返回流程列表
-          </button>
-        </div>
+        <PageError
+          title="加载失败"
+          message={loadError || '流程不存在或已被删除'}
+          onRetry={loadWorkflow}
+          backTo="/workflows"
+          backText="返回流程列表"
+        />
       </div>
     );
   }
@@ -74,7 +198,7 @@ function WorkflowPreview() {
           <button className="btn btn-default" onClick={() => navigate(`/workflow/editor/${id}`)}>
             编辑
           </button>
-          <button className="btn btn-success" onClick={() => navigate(`/workflow/instance/new/${id}`)}>
+          <button className="btn btn-success" onClick={handleStartInstance}>
             ▶ 启动流程
           </button>
         </div>
@@ -127,6 +251,95 @@ function WorkflowPreview() {
           </div>
         </div>
       </div>
+
+      {showStartModal && (
+        <div className="modal-overlay" onClick={handleCloseModal}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>启动流程 - 填写表单</h3>
+              <button className="modal-close" onClick={handleCloseModal} disabled={startingInstance}>×</button>
+            </div>
+            <div className="modal-body">
+              {selectedForm && (
+                <div className="form-preview-section">
+                  <h4 style={{ marginBottom: '16px', color: '#1890ff' }}>
+                    📝 {selectedForm.name}
+                  </h4>
+                  {selectedForm.description && (
+                    <p style={{ color: '#666', marginBottom: '16px' }}>
+                      {selectedForm.description}
+                    </p>
+                  )}
+                  <div className="form-fields-container" style={{
+                    maxHeight: '400px',
+                    overflowY: 'auto',
+                    padding: '16px',
+                    backgroundColor: '#fafafa',
+                    borderRadius: '8px',
+                    border: '1px solid #e8e8e8'
+                  }}>
+                    <div className="form-render-grid" style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(24, 1fr)',
+                      gap: '16px'
+                    }}>
+                      {selectedForm.fields?.map(field => (
+                        <div
+                          key={field.id}
+                          style={{
+                            gridColumn: `span ${field.span || 24}`,
+                            marginBottom: '16px'
+                          }}
+                          className="form-item"
+                        >
+                          <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: '500',
+                            color: '#333'
+                          }}>
+                            {field.label}
+                            {field.required && <span style={{ color: '#f5222d', marginLeft: '4px' }}>*</span>}
+                          </label>
+                          <FieldRenderer
+                            field={field}
+                            value={formData[field.id]}
+                            onChange={handleFormFieldChange}
+                            errors={formErrors}
+                            disabled={startingInstance}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer" style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '12px',
+              padding: '16px 20px',
+              borderTop: '1px solid #e8e8e8'
+            }}>
+              <button
+                className="btn btn-default"
+                onClick={handleCloseModal}
+                disabled={startingInstance}
+              >
+                取消
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleConfirmStart}
+                disabled={startingInstance}
+              >
+                {startingInstance ? '启动中...' : '确定启动'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

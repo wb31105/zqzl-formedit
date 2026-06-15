@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import FieldRenderer from '../components/FieldRenderer';
 import { formApi } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
+import PageError from '../components/PageError';
 
 function FormPreview() {
   const { id } = useParams();
@@ -12,12 +14,21 @@ function FormPreview() {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const { setAlert, clearAlert } = useNotification();
 
   useEffect(() => {
     loadForm();
   }, [id]);
 
+  useEffect(() => {
+    return () => clearAlert();
+  }, []);
+
   const loadForm = async () => {
+    setLoading(true);
+    setLoadError('');
+    clearAlert();
     try {
       const response = await formApi.getFormById(id);
       setForm(response.data);
@@ -28,6 +39,13 @@ function FormPreview() {
       setFormData(initialData);
     } catch (error) {
       console.error('加载表单失败:', error);
+      let msg;
+      if (error.response?.status === 404) {
+        msg = '表单不存在或已被删除';
+      } else {
+        msg = '加载表单失败: ' + (error.response?.data?.error || error.message || '网络错误');
+      }
+      setLoadError(msg);
     } finally {
       setLoading(false);
     }
@@ -94,12 +112,14 @@ function FormPreview() {
       if (response.data.valid) {
         setSubmitted(true);
         console.log('表单数据:', formData);
+        setAlert('success', '表单提交成功', 3000);
       } else {
         setErrors(response.data.errors || {});
+        setAlert('error', '表单验证未通过，请检查填写内容');
       }
     } catch (error) {
       console.error('验证失败:', error);
-      alert('后端验证失败');
+      setAlert('error', '后端验证失败: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -117,8 +137,18 @@ function FormPreview() {
     return <div className="preview-container">加载中...</div>;
   }
 
-  if (!form) {
-    return <div className="preview-container">表单不存在</div>;
+  if (loadError || !form) {
+    return (
+      <div className="preview-container">
+        <PageError
+          title="加载失败"
+          message={loadError || '表单不存在或已被删除'}
+          onRetry={loadForm}
+          backTo="/"
+          backText="返回表单列表"
+        />
+      </div>
+    );
   }
 
   return (

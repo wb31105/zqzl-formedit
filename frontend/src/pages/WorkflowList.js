@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { workflowDefinitionApi, workflowInstanceApi } from '../services/workflowApi';
 import { formApi } from '../services/api';
 import FieldRenderer from '../components/FieldRenderer';
+import PageError from '../components/PageError';
 import { useNotification } from '../context/NotificationContext';
 
 function WorkflowList() {
@@ -19,7 +20,11 @@ function WorkflowList() {
   const [instancesTotalElements, setInstancesTotalElements] = useState(0);
   const [loadError, setLoadError] = useState('');
   const navigate = useNavigate();
-  const { showError, showSuccess, showConfirm } = useNotification();
+  const { showConfirm, setAlert, clearAlert } = useNotification();
+
+  useEffect(() => {
+    return () => clearAlert();
+  }, []);
 
   const [showStartModal, setShowStartModal] = useState(false);
   const [startingDefinitionId, setStartingDefinitionId] = useState(null);
@@ -79,11 +84,11 @@ function WorkflowList() {
     if (confirmed) {
       try {
         await workflowDefinitionApi.deleteDefinition(id);
-        showSuccess('流程删除成功');
+        setAlert('success', '流程删除成功', 3000);
         loadWorkflows();
       } catch (error) {
         console.error('删除流程失败:', error);
-        showError('删除失败: ' + (error.response?.data?.error || error.message));
+        setAlert('error', '删除失败: ' + (error.response?.data?.error || error.message));
       }
     }
   };
@@ -94,11 +99,11 @@ function WorkflowList() {
     if (confirmed) {
       try {
         await workflowInstanceApi.deleteInstance(id);
-        showSuccess('实例删除成功');
+        setAlert('success', '实例删除成功', 3000);
         loadInstances();
       } catch (error) {
         console.error('删除实例失败:', error);
-        showError('删除失败: ' + (error.response?.data?.error || error.message));
+        setAlert('error', '删除失败: ' + (error.response?.data?.error || error.message));
       }
     }
   };
@@ -123,7 +128,7 @@ function WorkflowList() {
         setShowStartModal(true);
       } catch (error) {
         console.error('加载绑定表单失败:', error);
-        showError('加载绑定表单失败: ' + (error.response?.data?.error || error.message));
+        setAlert('error', '加载绑定表单失败: ' + (error.response?.data?.error || error.message));
       }
     } else {
       const confirmed = await showConfirm('此流程未绑定表单，是否直接启动？', '启动确认');
@@ -202,11 +207,11 @@ function WorkflowList() {
       }
       const instanceId = response.data.id;
       setShowStartModal(false);
-      showSuccess('流程启动成功');
+      setAlert('success', '流程启动成功', 3000);
       navigate(`/workflow/instance/${instanceId}`);
     } catch (error) {
       console.error('启动流程失败:', error);
-      showError('启动失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '启动失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setStartingInstance(false);
     }
@@ -381,32 +386,13 @@ function WorkflowList() {
   if (loadError) {
     return (
       <div className="workflow-list-container">
-        <div style={{
-          textAlign: 'center',
-          padding: '80px 20px',
-          color: '#666',
-          maxWidth: '600px',
-          margin: '0 auto'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
-          <h2 style={{ color: '#cf1322', marginBottom: '8px' }}>
-            加载失败
-          </h2>
-          <p style={{ marginBottom: '16px', color: '#666', lineHeight: '1.6' }}>
-            {loadError}
-          </p>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            <button 
-              className="btn btn-primary" 
-              onClick={() => activeTab === 'definitions' ? loadWorkflows() : loadInstances()}
-            >
-              重新加载
-            </button>
-            <button className="btn btn-default" onClick={() => navigate('/')}>
-              返回首页
-            </button>
-          </div>
-        </div>
+        <PageError
+          title="加载失败"
+          message={loadError}
+          onRetry={() => activeTab === 'definitions' ? loadWorkflows() : loadInstances()}
+          backTo="/"
+          backText="返回首页"
+        />
       </div>
     );
   }

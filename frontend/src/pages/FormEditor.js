@@ -5,6 +5,8 @@ import PropertiesPanel from '../components/PropertiesPanel';
 import FieldRenderer from '../components/FieldRenderer';
 import { createField } from '../utils/fieldTypes';
 import { formApi } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
+import PageError from '../components/PageError';
 
 function FormEditor() {
   const { id } = useParams();
@@ -18,7 +20,10 @@ function FormEditor() {
   const [selectedFieldId, setSelectedFieldId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [currentFormId, setCurrentFormId] = useState(hasPersistedId ? id : null);
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(false);
   const canvasRef = useRef(null);
+  const { setAlert, clearAlert } = useNotification();
 
   useEffect(() => {
     if (!isNew) {
@@ -26,7 +31,14 @@ function FormEditor() {
     }
   }, [id, isNew]);
 
+  useEffect(() => {
+    return () => clearAlert();
+  }, []);
+
   const loadForm = async (formId) => {
+    setLoading(true);
+    setLoadError('');
+    clearAlert();
     try {
       const response = await formApi.getFormById(formId);
       const form = response.data;
@@ -36,6 +48,15 @@ function FormEditor() {
       setCurrentFormId(form.id);
     } catch (error) {
       console.error('加载表单失败:', error);
+      let msg;
+      if (error.response?.status === 404) {
+        msg = '表单不存在或已被删除';
+      } else {
+        msg = '加载表单失败: ' + (error.response?.data?.error || error.message || '网络错误');
+      }
+      setLoadError(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -95,11 +116,12 @@ function FormEditor() {
 
   const handleSave = async () => {
     if (!formName.trim()) {
-      alert('请输入表单名称');
+      setAlert('warning', '请输入表单名称');
       return;
     }
 
     setSaving(true);
+    clearAlert();
     try {
       const formData = {
         name: formName,
@@ -115,16 +137,34 @@ function FormEditor() {
         const formIdToSave = currentFormId || id;
         await formApi.updateForm(formIdToSave, formData);
       }
-      alert('保存成功');
+      setAlert('success', '保存成功', 3000);
     } catch (error) {
       console.error('保存失败:', error);
-      alert('保存失败: ' + (error.response?.data?.message || error.message));
+      setAlert('error', '保存失败: ' + (error.response?.data?.error || error.message));
     } finally {
       setSaving(false);
     }
   };
 
   const canPreview = !!currentFormId;
+
+  if (loading) {
+    return <div className="form-editor">加载中...</div>;
+  }
+
+  if (loadError) {
+    return (
+      <div className="form-editor">
+        <PageError
+          title="加载失败"
+          message={loadError}
+          onRetry={() => loadForm(id)}
+          backTo="/"
+          backText="返回表单列表"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="form-editor">
