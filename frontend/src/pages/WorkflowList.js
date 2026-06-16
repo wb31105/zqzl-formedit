@@ -1,26 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workflowDefinitionApi, workflowInstanceApi } from '../services/workflowApi';
-import { formApi } from '../services/api';
+import { formApi, getErrorMessage } from '../services/api';
 import FieldRenderer from '../components/FieldRenderer';
 import PageError from '../components/PageError';
 import { useNotification } from '../context/NotificationContext';
+import usePaginatedList from '../hooks/usePaginatedList';
+import { validateFormFields } from '../utils/formValidation';
+import { APPROVAL_ACTION, APPROVAL_ACTION_LABEL, INSTANCE_STATUS, STATUS_LABEL } from '../constants/workflowConstants';
 
 function WorkflowList() {
-  const [workflows, setWorkflows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(0);
-  const [pageSize] = useState(10);
-  const [totalPages, setTotalPages] = useState(0);
-  const [totalElements, setTotalElements] = useState(0);
   const [activeTab, setActiveTab] = useState('definitions');
-  const [instances, setInstances] = useState([]);
-  const [instancesPage, setInstancesPage] = useState(0);
-  const [instancesTotalPages, setInstancesTotalPages] = useState(0);
-  const [instancesTotalElements, setInstancesTotalElements] = useState(0);
-  const [loadError, setLoadError] = useState('');
   const navigate = useNavigate();
   const { showConfirm, setAlert, clearAlert } = useNotification();
+
+  const definitionList = usePaginatedList({ fetchFunction: (params) => workflowDefinitionApi.getAllDefinitions(params), pageSize: 10 });
+  const instanceList = usePaginatedList({ fetchFunction: (params) => workflowInstanceApi.getAllInstances(params), pageSize: 10 });
 
   useEffect(() => {
     return () => clearAlert();
@@ -36,76 +31,20 @@ function WorkflowList() {
 
   useEffect(() => {
     if (activeTab === 'definitions') {
-      loadWorkflows();
+      definitionList.reload();
     } else {
-      loadInstances();
+      instanceList.reload();
     }
-  }, [page, instancesPage, activeTab]);
-
-  const loadWorkflows = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const response = await workflowDefinitionApi.getAllDefinitions({ page, size: pageSize });
-      const data = response.data;
-      setWorkflows(data.content || []);
-      setTotalPages(data.totalPages || 0);
-      setTotalElements(data.totalElements || 0);
-    } catch (error) {
-      console.error('加载流程列表失败:', error);
-      const msg = '加载流程列表失败: ' + (error.response?.data?.error || error.message || '网络错误');
-      setLoadError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadInstances = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const response = await workflowInstanceApi.getAllInstances({ page: instancesPage, size: pageSize });
-      const data = response.data;
-      setInstances(data.content || []);
-      setInstancesTotalPages(data.totalPages || 0);
-      setInstancesTotalElements(data.totalElements || 0);
-    } catch (error) {
-      console.error('加载实例列表失败:', error);
-      const msg = '加载实例列表失败: ' + (error.response?.data?.error || error.message || '网络错误');
-      setLoadError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [activeTab]);
 
   const handleDelete = async (id, e) => {
     e.stopPropagation();
-    const confirmed = await showConfirm('确定要删除这个流程吗？删除后无法恢复。', '删除流程');
-    if (confirmed) {
-      try {
-        await workflowDefinitionApi.deleteDefinition(id);
-        setAlert('success', '流程删除成功', 3000);
-        loadWorkflows();
-      } catch (error) {
-        console.error('删除流程失败:', error);
-        setAlert('error', '删除失败: ' + (error.response?.data?.error || error.message));
-      }
-    }
+    await definitionList.deleteItem(workflowDefinitionApi.deleteDefinition, id, '确定要删除这个流程吗？删除后无法恢复。', '流程删除成功');
   };
 
   const handleDeleteInstance = async (id, e) => {
     e.stopPropagation();
-    const confirmed = await showConfirm('确定要删除这个流程实例吗？删除后无法恢复。', '删除实例');
-    if (confirmed) {
-      try {
-        await workflowInstanceApi.deleteInstance(id);
-        setAlert('success', '实例删除成功', 3000);
-        loadInstances();
-      } catch (error) {
-        console.error('删除实例失败:', error);
-        setAlert('error', '删除失败: ' + (error.response?.data?.error || error.message));
-      }
-    }
+    await instanceList.deleteItem(workflowInstanceApi.deleteInstance, id, '确定要删除这个流程实例吗？删除后无法恢复。', '实例删除成功');
   };
 
   const handleStartInstance = async (definitionId, e) => {
@@ -116,7 +55,7 @@ function WorkflowList() {
     setFormData({});
     setFormErrors({});
 
-    const workflow = workflows.find(w => w.id === definitionId);
+    const workflow = definitionList.items.find(w => w.id === definitionId);
     const boundFormId = workflow?.formId;
     const boundFormName = workflow?.formName;
 
@@ -128,7 +67,7 @@ function WorkflowList() {
         setShowStartModal(true);
       } catch (error) {
         console.error('加载绑定表单失败:', error);
-        setAlert('error', '加载绑定表单失败: ' + (error.response?.data?.error || error.message));
+        setAlert('error', '加载绑定表单失败: ' + getErrorMessage(error));
       }
     } else {
       const confirmed = await showConfirm('此流程未绑定表单，是否直接启动？', '启动确认');
@@ -154,43 +93,9 @@ function WorkflowList() {
 
   const validateForm = () => {
     if (!selectedForm) return true;
-    const errors = {};
-    selectedForm.fields?.forEach(field => {
-      const value = formData[field.id];
-      const stringValue = value ? String(value).trim() : '';
-      const isEmpty = value === null || value === undefined || value === '' || 
-        (Array.isArray(value) && value.length === 0) || stringValue === '';
-
-      if (field.required && isEmpty) {
-        errors[field.id] = `${field.label}不能为空`;
-        return;
-      }
-
-      if (isEmpty) return;
-
-      const isTextLike = ['text', 'textarea', 'email', 'number'].includes(field.type);
-
-      if (isTextLike && field.minLength && stringValue.length < field.minLength) {
-        errors[field.id] = `${field.label}最少需要${field.minLength}个字符`;
-      }
-
-      if (isTextLike && field.maxLength && stringValue.length > field.maxLength) {
-        errors[field.id] = `${field.label}最多允许${field.maxLength}个字符`;
-      }
-
-      if (field.pattern && field.pattern.trim() && stringValue) {
-        try {
-          const regex = new RegExp(field.pattern);
-          if (!regex.test(stringValue)) {
-            errors[field.id] = field.patternMessage || `${field.label}格式不正确`;
-          }
-        } catch (e) {
-          console.error('正则表达式错误:', e);
-        }
-      }
-    });
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    const result = validateFormFields(selectedForm.fields, formData);
+    setFormErrors(result.errors || {});
+    return result.valid;
   };
 
   const doStartInstance = async (definitionId, formId, data) => {
@@ -211,7 +116,7 @@ function WorkflowList() {
       navigate(`/workflow/instance/${instanceId}`);
     } catch (error) {
       console.error('启动流程失败:', error);
-      setAlert('error', '启动失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '启动失败: ' + getErrorMessage(error));
     } finally {
       setStartingInstance(false);
     }
@@ -240,17 +145,17 @@ function WorkflowList() {
 
   const getStatusBadge = (status) => {
     const statusMap = {
-      RUNNING: { label: '运行中', className: 'badge-running' },
-      COMPLETED: { label: '已完成', className: 'badge-completed' },
-      PENDING: { label: '等待中', className: 'badge-pending' },
+      RUNNING: { label: STATUS_LABEL.RUNNING, className: 'badge-running' },
+      COMPLETED: { label: STATUS_LABEL.COMPLETED, className: 'badge-completed' },
+      PENDING: { label: STATUS_LABEL.PENDING, className: 'badge-pending' },
     };
-    const config = statusMap[status] || { label: status, className: 'badge-default' };
+    const config = statusMap[status] || { label: STATUS_LABEL[status] || status, className: 'badge-default' };
     return <span className={`badge ${config.className}`}>{config.label}</span>;
   };
 
   const renderDefinitions = () => (
     <div className="workflow-list">
-      {workflows.map((workflow) => (
+      {definitionList.items.map((workflow) => (
         <div key={workflow.id} className="workflow-card">
           <h3>{workflow.name}</h3>
           <p className="workflow-desc">{workflow.description || '暂无描述'}</p>
@@ -286,7 +191,7 @@ function WorkflowList() {
 
   const renderInstances = () => (
     <div className="workflow-list">
-      {instances.map((instance) => (
+      {instanceList.items.map((instance) => (
         <div key={instance.id} className="workflow-card">
           <h3>
             {instance.definitionName}
@@ -313,83 +218,19 @@ function WorkflowList() {
     </div>
   );
 
-  const renderPagination = () => {
-    const currentPage = activeTab === 'definitions' ? page : instancesPage;
-    const total = activeTab === 'definitions' ? totalPages : instancesTotalPages;
-    const totalEl = activeTab === 'definitions' ? totalElements : instancesTotalElements;
-    const setCurrentPage = activeTab === 'definitions' ? setPage : setInstancesPage;
+  const currentList = activeTab === 'definitions' ? definitionList : instanceList;
 
-    if (total <= 1) return null;
-
-    const pages = [];
-    const maxVisible = 5;
-    let start = Math.max(0, currentPage - Math.floor(maxVisible / 2));
-    let end = Math.min(total, start + maxVisible);
-    if (end - start < maxVisible) {
-      start = Math.max(0, end - maxVisible);
-    }
-
-    for (let i = start; i < end; i++) {
-      pages.push(i);
-    }
-
-    return (
-      <div className="pagination">
-        <button
-          className="btn btn-default btn-page"
-          disabled={currentPage === 0}
-          onClick={() => setCurrentPage(0)}
-        >
-          首页
-        </button>
-        <button
-          className="btn btn-default btn-page"
-          disabled={currentPage === 0}
-          onClick={() => setCurrentPage(currentPage - 1)}
-        >
-          上一页
-        </button>
-        {pages.map((p) => (
-          <button
-            key={p}
-            className={`btn btn-page ${p === currentPage ? 'btn-primary' : 'btn-default'}`}
-            onClick={() => setCurrentPage(p)}
-          >
-            {p + 1}
-          </button>
-        ))}
-        <button
-          className="btn btn-default btn-page"
-          disabled={currentPage >= total - 1}
-          onClick={() => setCurrentPage(currentPage + 1)}
-        >
-          下一页
-        </button>
-        <button
-          className="btn btn-default btn-page"
-          disabled={currentPage >= total - 1}
-          onClick={() => setCurrentPage(total - 1)}
-        >
-          末页
-        </button>
-        <span className="pagination-info">
-          共 {totalEl} 条，第 {currentPage + 1}/{total} 页
-        </span>
-      </div>
-    );
-  };
-
-  if (loading && (activeTab === 'definitions' ? workflows.length === 0 : instances.length === 0)) {
+  if (currentList.loading && (activeTab === 'definitions' ? definitionList.items.length === 0 : instanceList.items.length === 0)) {
     return <div className="workflow-list-container">加载中...</div>;
   }
 
-  if (loadError) {
+  if (currentList.loadError) {
     return (
       <div className="workflow-list-container">
         <PageError
           title="加载失败"
-          message={loadError}
-          onRetry={() => activeTab === 'definitions' ? loadWorkflows() : loadInstances()}
+          message={currentList.loadError}
+          onRetry={() => (activeTab === 'definitions' ? definitionList.reload() : instanceList.reload())}
           backTo="/"
           backText="返回首页"
         />
@@ -423,7 +264,7 @@ function WorkflowList() {
 
       {activeTab === 'definitions' ? renderDefinitions() : renderInstances()}
 
-      {!loadError && (activeTab === 'definitions' ? workflows.length === 0 : instances.length === 0) && (
+      {!currentList.loadError && (activeTab === 'definitions' ? definitionList.items.length === 0 : instanceList.items.length === 0) && (
         <div style={{ textAlign: 'center', padding: '60px', color: '#999' }}>
           {activeTab === 'definitions'
             ? '暂无流程定义，点击"新建流程"创建'
@@ -431,7 +272,7 @@ function WorkflowList() {
         </div>
       )}
 
-      {renderPagination()}
+      {activeTab === 'definitions' ? definitionList.renderPagination() : instanceList.renderPagination()}
 
       {showStartModal && (
         <div className="modal-overlay" onClick={handleCloseModal}>

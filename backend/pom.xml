@@ -11,11 +11,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.formedit</groupId>
-    <artifactId>formedit-backend</artifactId>
+    <groupId>com.bw</groupId>
+    <artifactId>flowform-backend</artifactId>
     <version>1.0.0</version>
-    <name>formedit-backend</name>
-    <description>Form Editor Backend</description>
+    <name>flowform-backend</name>
+    <description>BW Flowform Backend - BW 流程表单台</description>
 
     <properties>
         <java.version>11</java.version>
@@ -44,11 +44,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.vladmihalcea</groupId>
-            <artifactId>hibernate-types-52</artifactId>
-            <version>2.14.0</version>
-        </dependency>
+
     </dependencies>
 
     <build>

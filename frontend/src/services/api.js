@@ -9,6 +9,17 @@ const api = axios.create({
   },
 });
 
+api.interceptors.response.use(
+  response => response,
+  error => {
+    throw error;
+  }
+);
+
+export function getErrorMessage(error, defaultMsg = '操作失败') {
+  return error?.response?.data?.error || error?.message || defaultMsg;
+}
+
 export const formApi = {
   getAllForms: (params) => api.get('/forms', { params }),
   getFormsList: () => api.get('/forms/list'),

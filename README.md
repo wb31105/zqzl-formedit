@@ -1,6 +1,6 @@
-# Form Editor - 表单与工作流编辑器
+# BW 流程表单台 (flowform)
 
-基于 Spring Boot + React 的前后端分离表单和工作流编辑器应用。
+基于 Spring Boot + React 的前后端分离表单和工作流编辑器应用。品牌名：BW 流程表单台，工程名 flowform。
 
 ## 环境要求
 
@@ -15,13 +15,13 @@
 
 ```
 zqzl-formedit/
-├── backend/                 # 后端 Spring Boot 项目
+├── backend/                 # 后端 Spring Boot 项目（flowform-backend）
 │   ├── src/
 │   │   └── main/
-│   │       ├── java/        # Java 源代码
+│   │       ├── java/        # Java 源代码，包名 com.bw.flowform
 │   │       └── resources/   # 配置文件（application.yml）
 │   └── pom.xml
-├── frontend/                # 前端 React 项目
+├── frontend/                # 前端 React 项目（flowform-frontend）
 │   ├── public/
 │   ├── src/
 │   ├── package.json
@@ -164,4 +164,4 @@ make clean
 
 1. **不要提交 `.env` 文件**：环境变量文件已加入 `.gitignore`，请使用 `.env.example` 作为模板
 2. **前端依赖安装慢**：可配置 npm 镜像源 `npm config set registry https://registry.npmmirror.com`
-3. **后端首次启动**：会自动初始化 H2 数据库，无需手动建表
+3. **后端首次启动**：会自动初始化 H2 数据库（flowformdb），无需手动建表

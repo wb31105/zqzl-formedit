@@ -3,9 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import WorkflowCanvas from '../components/WorkflowCanvas';
 import FieldRenderer from '../components/FieldRenderer';
 import { workflowDefinitionApi, workflowInstanceApi } from '../services/workflowApi';
-import { formApi } from '../services/api';
+import { formApi, getErrorMessage } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import PageError from '../components/PageError';
+import { validateFormFields } from '../utils/formValidation';
 
 function WorkflowPreview() {
   const { id } = useParams();
@@ -42,7 +43,7 @@ function WorkflowPreview() {
       if (error.response?.status === 404) {
         msg = '流程不存在或已被删除';
       } else {
-        msg = '加载流程失败: ' + (error.response?.data?.error || error.message || '网络错误');
+        msg = '加载流程失败: ' + getErrorMessage(error, '网络错误');
       }
       setLoadError(msg);
     } finally {
@@ -65,7 +66,7 @@ function WorkflowPreview() {
         setShowStartModal(true);
       } catch (error) {
         console.error('加载绑定表单失败:', error);
-        setAlert('error', '加载绑定表单失败: ' + (error.response?.data?.error || error.message));
+        setAlert('error', '加载绑定表单失败: ' + getErrorMessage(error));
       }
     } else {
       const confirmed = await showConfirm('此流程未绑定表单，是否直接启动？', '启动确认');
@@ -91,43 +92,9 @@ function WorkflowPreview() {
 
   const validateForm = () => {
     if (!selectedForm) return true;
-    const errors = {};
-    selectedForm.fields?.forEach(field => {
-      const value = formData[field.id];
-      const stringValue = value ? String(value).trim() : '';
-      const isEmpty = value === null || value === undefined || value === '' ||
-        (Array.isArray(value) && value.length === 0) || stringValue === '';
-
-      if (field.required && isEmpty) {
-        errors[field.id] = `${field.label}不能为空`;
-        return;
-      }
-
-      if (isEmpty) return;
-
-      const isTextLike = ['text', 'textarea', 'email', 'number'].includes(field.type);
-
-      if (isTextLike && field.minLength && stringValue.length < field.minLength) {
-        errors[field.id] = `${field.label}最少需要${field.minLength}个字符`;
-      }
-
-      if (isTextLike && field.maxLength && stringValue.length > field.maxLength) {
-        errors[field.id] = `${field.label}最多允许${field.maxLength}个字符`;
-      }
-
-      if (field.pattern && field.pattern.trim() && stringValue) {
-        try {
-          const regex = new RegExp(field.pattern);
-          if (!regex.test(stringValue)) {
-            errors[field.id] = field.patternMessage || `${field.label}格式不正确`;
-          }
-        } catch (e) {
-          console.error('正则表达式错误:', e);
-        }
-      }
-    });
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    const result = validateFormFields(selectedForm.fields, formData);
+    setFormErrors(result.errors || {});
+    return result.valid;
   };
 
   const doStartInstance = async () => {
@@ -148,7 +115,7 @@ function WorkflowPreview() {
       navigate(`/workflow/instance/${instanceId}`);
     } catch (error) {
       console.error('启动流程失败:', error);
-      setAlert('error', '启动失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '启动失败: ' + getErrorMessage(error));
     } finally {
       setStartingInstance(false);
     }

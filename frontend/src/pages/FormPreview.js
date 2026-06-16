@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import FieldRenderer from '../components/FieldRenderer';
-import { formApi } from '../services/api';
+import { formApi, getErrorMessage } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import PageError from '../components/PageError';
+import { validateFormFields } from '../utils/formValidation';
 
 function FormPreview() {
   const { id } = useParams();
@@ -43,7 +44,7 @@ function FormPreview() {
       if (error.response?.status === 404) {
         msg = '表单不存在或已被删除';
       } else {
-        msg = '加载表单失败: ' + (error.response?.data?.error || error.message || '网络错误');
+        msg = '加载表单失败: ' + getErrorMessage(error, '网络错误');
       }
       setLoadError(msg);
     } finally {
@@ -61,44 +62,9 @@ function FormPreview() {
   };
 
   const validateForm = () => {
-    const newErrors = {};
-
-    form.fields?.forEach((field) => {
-      const value = formData[field.id];
-      const stringValue = value ? String(value).trim() : '';
-      const isEmpty = !value || (Array.isArray(value) && value.length === 0) || stringValue === '';
-
-      if (field.required && isEmpty) {
-        newErrors[field.id] = `${field.label}不能为空`;
-        return;
-      }
-
-      if (isEmpty) return;
-
-      const isTextLike = ['text', 'textarea', 'email', 'number'].includes(field.type);
-
-      if (isTextLike && field.minLength && stringValue.length < field.minLength) {
-        newErrors[field.id] = `${field.label}最少需要${field.minLength}个字符`;
-      }
-
-      if (isTextLike && field.maxLength && stringValue.length > field.maxLength) {
-        newErrors[field.id] = `${field.label}最多允许${field.maxLength}个字符`;
-      }
-
-      if (field.pattern && field.pattern.trim() && stringValue) {
-        try {
-          const regex = new RegExp(field.pattern);
-          if (!regex.test(stringValue)) {
-            newErrors[field.id] = field.patternMessage || `${field.label}格式不正确`;
-          }
-        } catch (e) {
-          console.error('正则表达式错误:', e);
-        }
-      }
-    });
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const result = validateFormFields(form.fields, formData);
+    setErrors(result.errors || {});
+    return result.valid;
   };
 
   const handleSubmit = async () => {
@@ -119,7 +85,7 @@ function FormPreview() {
       }
     } catch (error) {
       console.error('验证失败:', error);
-      setAlert('error', '后端验证失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '后端验证失败: ' + getErrorMessage(error));
     }
   };
 

@@ -1,4 +1,7 @@
 import api from './api';
+import { NODE_TYPES, getNodeTypeConfig } from '../constants/workflowConstants';
+
+export { NODE_TYPES, getNodeTypeConfig };
 
 export const workflowDefinitionApi = {
   getAllDefinitions: (params) => api.get('/workflow-definitions', { params }),
@@ -20,17 +23,4 @@ export const workflowInstanceApi = {
   startInstanceWithForm: (definitionId, data) => api.post(`/workflow-instances/start-with-form/${definitionId}`, data),
   completeTask: (instanceId, data) => api.post(`/workflow-instances/${instanceId}/complete-task`, data),
   deleteInstance: (id) => api.delete(`/workflow-instances/${id}`),
-};
-
-export const NODE_TYPES = [
-  { type: 'start', name: '开始节点', icon: '▶', color: '#52c41a', canDelete: false },
-  { type: 'approval', name: '审批节点', icon: '✓', color: '#1890ff', canDelete: true },
-  { type: 'countersign', name: '会签节点', icon: '👥', color: '#13c2c2', canDelete: true },
-  { type: 'condition', name: '条件分支', icon: '◆', color: '#fa8c16', canDelete: true },
-  { type: 'auto', name: '自动任务', icon: '⚙', color: '#722ed1', canDelete: true },
-  { type: 'end', name: '结束节点', icon: '■', color: '#f5222d', canDelete: false },
-];
-
-export const getNodeTypeConfig = (type) => {
-  return NODE_TYPES.find(t => t.type === type) || NODE_TYPES[1];
 };

@@ -3,7 +3,7 @@ server:
 
 spring:
   datasource:
-    url: jdbc:h2:mem:formeditdb
+    url: jdbc:h2:mem:flowformdb
     driver-class-name: org.h2.Driver
     username: sa
     password:

@@ -2,12 +2,22 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import WorkflowCanvas from '../components/WorkflowCanvas';
 import FieldRenderer from '../components/FieldRenderer';
-import { formApi } from '../services/api';
+import { formApi, getErrorMessage } from '../services/api';
 import {
   workflowDefinitionApi,
   workflowInstanceApi,
   getNodeTypeConfig,
 } from '../services/workflowApi';
+import {
+  APPROVAL_ACTION,
+  COUNTERSIGN_TYPE,
+  COUNTERSIGN_TYPE_LABEL,
+  INSTANCE_STATUS,
+  NODE_PROPS,
+  NODE_TYPE_CODES,
+  STATUS_LABEL,
+  TASK_STATUS,
+} from '../constants/workflowConstants';
 import { useNotification } from '../context/NotificationContext';
 import PageError from '../components/PageError';
 
@@ -57,7 +67,7 @@ function WorkflowInstance() {
           setFormLoadError('');
         } catch (formError) {
           console.error('加载表单详情失败:', formError);
-          setFormLoadError('表单数据加载失败: ' + (formError.response?.data?.error || formError.message));
+          setFormLoadError('表单数据加载失败: ' + getErrorMessage(formError));
         }
       }
     } catch (error) {
@@ -66,7 +76,7 @@ function WorkflowInstance() {
       if (error.response?.status === 404) {
         msg = '流程不存在或已被删除';
       } else {
-        msg = '启动失败: ' + (error.response?.data?.error || error.message || '网络错误');
+        msg = '启动失败: ' + getErrorMessage(error, '网络错误');
       }
       setStartError(msg);
     } finally {
@@ -89,7 +99,7 @@ function WorkflowInstance() {
           setFormLoadError('');
         } catch (formError) {
           console.error('加载表单详情失败:', formError);
-          setFormLoadError('表单数据加载失败: ' + (formError.response?.data?.error || formError.message));
+          setFormLoadError('表单数据加载失败: ' + getErrorMessage(formError));
         }
       }
     } catch (error) {
@@ -98,7 +108,7 @@ function WorkflowInstance() {
       if (error.response?.status === 404) {
         msg = '流程实例不存在或已被删除';
       } else {
-        msg = '加载实例失败: ' + (error.response?.data?.error || error.message || '网络错误');
+        msg = '加载实例失败: ' + getErrorMessage(error, '网络错误');
       }
       setLoadError(msg);
     } finally {
@@ -112,7 +122,7 @@ function WorkflowInstance() {
       setDefinition(response.data);
     } catch (error) {
       console.error('加载流程定义失败:', error);
-      setLoadError('加载流程定义失败: ' + (error.response?.data?.error || error.message || '网络错误'));
+      setLoadError('加载流程定义失败: ' + getErrorMessage(error, '网络错误'));
     }
   };
 
@@ -124,16 +134,17 @@ function WorkflowInstance() {
   const getButtonConfig = (nodeId) => {
     const node = getNodeByNodeId(nodeId);
     const props = node?.properties || {};
-    const actionType = props.actionType || 'approval';
+    const actionType = props[NODE_PROPS.ACTION_TYPE] || 'approval';
 
     switch (actionType) {
       case 'submit':
         return {
           showApprove: true,
           showReject: false,
-          approveText: props.approveText || '提交',
-          rejectText: props.rejectText || '拒绝',
-          commentLabel: props.commentLabel || '申请理由',
+          approveText: props[NODE_PROPS.APPROVE_TEXT] || '提交',
+          rejectText: props[NODE_PROPS.REJECT_TEXT] || '拒绝',
+          commentLabel: props[NODE_PROPS.COMMENT_LABEL] || '申请理由',
+          description: props[NODE_PROPS.DESCRIPTION] || '',
           confirmApprove: '确定要提交吗？',
           confirmReject: '确定要拒绝吗？',
         };
@@ -141,9 +152,10 @@ function WorkflowInstance() {
         return {
           showApprove: true,
           showReject: true,
-          approveText: props.approveText || '同意',
-          rejectText: props.rejectText || '退回',
-          commentLabel: props.commentLabel || '审核意见',
+          approveText: props[NODE_PROPS.APPROVE_TEXT] || '同意',
+          rejectText: props[NODE_PROPS.REJECT_TEXT] || '退回',
+          commentLabel: props[NODE_PROPS.COMMENT_LABEL] || '审核意见',
+          description: props[NODE_PROPS.DESCRIPTION] || '',
           confirmApprove: '确定要同意吗？',
           confirmReject: '确定要退回吗？',
         };
@@ -151,20 +163,22 @@ function WorkflowInstance() {
         return {
           showApprove: true,
           showReject: true,
-          approveText: props.approveText || '批准',
-          rejectText: props.rejectText || '拒绝',
-          commentLabel: props.commentLabel || '处理意见',
-          confirmApprove: `确定要${props.approveText || '批准'}吗？`,
-          confirmReject: `确定要${props.rejectText || '拒绝'}吗？`,
+          approveText: props[NODE_PROPS.APPROVE_TEXT] || '批准',
+          rejectText: props[NODE_PROPS.REJECT_TEXT] || '拒绝',
+          commentLabel: props[NODE_PROPS.COMMENT_LABEL] || '处理意见',
+          description: props[NODE_PROPS.DESCRIPTION] || '',
+          confirmApprove: `确定要${props[NODE_PROPS.APPROVE_TEXT] || '批准'}吗？`,
+          confirmReject: `确定要${props[NODE_PROPS.REJECT_TEXT] || '拒绝'}吗？`,
         };
       case 'approval':
       default:
         return {
           showApprove: true,
           showReject: true,
-          approveText: props.approveText || '批准',
-          rejectText: props.rejectText || '拒绝',
-          commentLabel: props.commentLabel || '处理意见',
+          approveText: props[NODE_PROPS.APPROVE_TEXT] || '批准',
+          rejectText: props[NODE_PROPS.REJECT_TEXT] || '拒绝',
+          commentLabel: props[NODE_PROPS.COMMENT_LABEL] || '处理意见',
+          description: props[NODE_PROPS.DESCRIPTION] || '',
           confirmApprove: '确定要批准吗？',
           confirmReject: '确定要拒绝吗？',
         };
@@ -172,19 +186,14 @@ function WorkflowInstance() {
   };
 
   const getCountersignTypeLabel = (type) => {
-    switch (type) {
-      case 'veto': return '一票否决';
-      case 'majority': return '过半通过';
-      case 'all':
-      default: return '全部同意才通过';
-    }
+    return COUNTERSIGN_TYPE_LABEL[type] || COUNTERSIGN_TYPE_LABEL[COUNTERSIGN_TYPE.ALL];
   };
 
   const handleTaskAction = async (task, action) => {
     const buttonConfig = getButtonConfig(task.nodeId);
-    const confirmMsg = action === 'approve' ? buttonConfig.confirmApprove : buttonConfig.confirmReject;
+    const confirmMsg = action === APPROVAL_ACTION.APPROVE ? buttonConfig.confirmApprove : buttonConfig.confirmReject;
 
-    const confirmed = await showConfirm(confirmMsg, action === 'approve' ? '确认批准' : '确认拒绝');
+    const confirmed = await showConfirm(confirmMsg, action === APPROVAL_ACTION.APPROVE ? '确认批准' : '确认拒绝');
     if (!confirmed) {
       return;
     }
@@ -208,7 +217,7 @@ function WorkflowInstance() {
       setAlert('success', '操作成功', 3000);
     } catch (error) {
       console.error('处理任务失败:', error);
-      setAlert('error', '处理失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '处理失败: ' + getErrorMessage(error));
     } finally {
       setProcessingTaskId(null);
     }
@@ -228,12 +237,12 @@ function WorkflowInstance() {
 
   const getStatusBadge = (status) => {
     const statusMap = {
-      RUNNING: { label: '运行中', className: 'badge-running' },
-      COMPLETED: { label: '已完成', className: 'badge-completed' },
-      PENDING: { label: '等待中', className: 'badge-pending' },
+      [INSTANCE_STATUS.RUNNING]: { className: 'badge-running' },
+      [INSTANCE_STATUS.COMPLETED]: { className: 'badge-completed' },
+      [INSTANCE_STATUS.ERROR]: { className: 'badge-error' },
     };
-    const config = statusMap[status] || { label: status, className: 'badge-default' };
-    return <span className={`badge ${config.className}`}>{config.label}</span>;
+    const config = statusMap[status] || { className: 'badge-default' };
+    return <span className={`badge ${config.className}`}>{STATUS_LABEL[status] || status}</span>;
   };
 
   const getHighlightNodeIds = () => {
@@ -256,7 +265,7 @@ function WorkflowInstance() {
   const getCountersignProgress = (nodeId) => {
     const allNodeTasks = (instance.tasks || []).filter(t => t.nodeId === nodeId);
     const total = allNodeTasks.length;
-    const completed = allNodeTasks.filter(t => t.status === 'COMPLETED').length;
+    const completed = allNodeTasks.filter(t => t.status === TASK_STATUS.COMPLETED).length;
     return { completed, total };
   };
 
@@ -399,14 +408,14 @@ function WorkflowInstance() {
             </div>
           )}
 
-          {instance.status === 'RUNNING' && Object.keys(pendingTasksByNode).length > 0 && (
+          {instance.status === INSTANCE_STATUS.RUNNING && Object.keys(pendingTasksByNode).length > 0 && (
             <div className="task-panel">
               <h3>待办任务</h3>
               {Object.entries(pendingTasksByNode).map(([nodeId, tasks]) => {
                 const node = getNodeByNodeId(nodeId);
                 const buttonConfig = getButtonConfig(nodeId);
-                const isCountersign = node?.type === 'countersign';
-                const countersignType = node?.properties?.countersignType || 'all';
+                const isCountersign = node?.type === NODE_TYPE_CODES.COUNTERSIGN;
+                const countersignType = node?.properties?.[NODE_PROPS.COUNTERSIGN_TYPE] || COUNTERSIGN_TYPE.ALL;
 
                 return (
                   <div key={nodeId} className="countersign-group">
@@ -437,9 +446,9 @@ function WorkflowInstance() {
                           <div>创建时间: {formatDate(task.createdAt)}</div>
                           {task.assignee && <div>审批人: {task.assignee}</div>}
                         </div>
-                        {node?.properties?.description && (
+                        {node?.properties?.[NODE_PROPS.DESCRIPTION] && (
                           <div className="task-description">
-                            {node.properties.description}
+                            {node.properties[NODE_PROPS.DESCRIPTION]}
                           </div>
                         )}
                         <div className="task-comment">
@@ -455,7 +464,7 @@ function WorkflowInstance() {
                           {buttonConfig.showApprove && (
                             <button
                               className="btn btn-success"
-                              onClick={() => handleTaskAction(task, 'approve')}
+                              onClick={() => handleTaskAction(task, APPROVAL_ACTION.APPROVE)}
                               disabled={processingTaskId === task.id}
                             >
                               {processingTaskId === task.id ? '处理中...' : `✓ ${buttonConfig.approveText}`}
@@ -464,7 +473,7 @@ function WorkflowInstance() {
                           {buttonConfig.showReject && (
                             <button
                               className="btn btn-danger"
-                              onClick={() => handleTaskAction(task, 'reject')}
+                              onClick={() => handleTaskAction(task, APPROVAL_ACTION.REJECT)}
                               disabled={processingTaskId === task.id}
                             >
                               {processingTaskId === task.id ? '处理中...' : `✕ ${buttonConfig.rejectText}`}
@@ -523,11 +532,11 @@ function WorkflowInstance() {
                     <span>{task.assignee ? `${task.assignee} - ` : ''}{task.nodeName}</span>
                     <span
                       className={`badge ${
-                        task.status === 'COMPLETED' ? 'badge-completed' :
-                        task.status === 'CANCELLED' ? 'badge-default' : 'badge-pending'
+                        task.status === TASK_STATUS.COMPLETED ? 'badge-completed' :
+                        task.status === TASK_STATUS.CANCELLED ? 'badge-default' : 'badge-pending'
                       }`}
                     >
-                      {task.status === 'COMPLETED' ? '已完成' : task.status === 'CANCELLED' ? '已取消' : '待处理'}
+                      {task.status === TASK_STATUS.COMPLETED ? STATUS_LABEL.COMPLETED : task.status === TASK_STATUS.CANCELLED ? STATUS_LABEL.CANCELLED : STATUS_LABEL.PENDING}
                     </span>
                   </div>
                   <div className="task-item-meta">

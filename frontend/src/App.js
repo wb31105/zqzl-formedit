@@ -8,7 +8,10 @@ import WorkflowPreview from './pages/WorkflowPreview';
 import WorkflowInstance from './pages/WorkflowInstance';
 import WorkflowHelp from './pages/WorkflowHelp';
 import { NotificationProvider } from './context/NotificationContext';
-import './App.css';
+import './styles/common.css';
+import './styles/forms.css';
+import './styles/workflows.css';
+import './styles/help.css';
 
 function App() {
   return (
@@ -16,7 +19,7 @@ function App() {
       <Router>
         <div className="app">
           <nav className="app-nav">
-            <div className="nav-brand">数据标注平台</div>
+            <div className="nav-brand">BW 流程表单台</div>
             <div className="nav-links">
               <Link to="/" className="nav-link">表单管理</Link>
               <Link to="/workflows" className="nav-link">工作流管理</Link>
