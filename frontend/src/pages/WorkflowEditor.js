@@ -6,9 +6,10 @@ import WorkflowCanvas from '../components/WorkflowCanvas';
 import WorkflowPropertiesPanel from '../components/WorkflowPropertiesPanel';
 import FieldRenderer from '../components/FieldRenderer';
 import { workflowDefinitionApi, workflowInstanceApi, getNodeTypeConfig } from '../services/workflowApi';
-import { formApi } from '../services/api';
+import { formApi, getErrorMessage } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import PageError from '../components/PageError';
+import { validateFormFields } from '../utils/formValidation';
 
 function WorkflowEditor() {
   const { id } = useParams();
@@ -133,7 +134,7 @@ function WorkflowEditor() {
       if (error.response?.status === 404) {
         msg = '流程不存在或已被删除';
       } else {
-        msg += error.response?.data?.error || error.message || '网络错误';
+        msg += getErrorMessage(error, '网络错误');
       }
       setLoadError(msg);
     } finally {
@@ -230,7 +231,7 @@ function WorkflowEditor() {
       }
     } catch (error) {
       console.error('验证失败:', error);
-      setAlert('error', '验证失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '验证失败: ' + getErrorMessage(error));
     } finally {
       setValidating(false);
     }
@@ -261,7 +262,7 @@ function WorkflowEditor() {
       }
     } catch (error) {
       console.error('保存失败:', error);
-      setAlert('error', '保存失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '保存失败: ' + getErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -284,7 +285,7 @@ function WorkflowEditor() {
           setShowStartModal(true);
         } catch (error) {
           console.error('加载表单失败:', error);
-          setAlert('error', '加载表单失败: ' + (error.response?.data?.error || error.message));
+          setAlert('error', '加载表单失败: ' + getErrorMessage(error));
         }
       } else {
         const confirmed = await showConfirm('此流程未绑定表单，是否直接启动？', '启动确认');
@@ -311,43 +312,9 @@ function WorkflowEditor() {
 
   const validateStartForm = () => {
     if (!selectedStartForm) return true;
-    const errors = {};
-    selectedStartForm.fields?.forEach(field => {
-      const value = startFormData[field.id];
-      const stringValue = value ? String(value).trim() : '';
-      const isEmpty = value === null || value === undefined || value === '' || 
-        (Array.isArray(value) && value.length === 0) || stringValue === '';
-
-      if (field.required && isEmpty) {
-        errors[field.id] = `${field.label}不能为空`;
-        return;
-      }
-
-      if (isEmpty) return;
-
-      const isTextLike = ['text', 'textarea', 'email', 'number'].includes(field.type);
-
-      if (isTextLike && field.minLength && stringValue.length < field.minLength) {
-        errors[field.id] = `${field.label}最少需要${field.minLength}个字符`;
-      }
-
-      if (isTextLike && field.maxLength && stringValue.length > field.maxLength) {
-        errors[field.id] = `${field.label}最多允许${field.maxLength}个字符`;
-      }
-
-      if (field.pattern && field.pattern.trim() && stringValue) {
-        try {
-          const regex = new RegExp(field.pattern);
-          if (!regex.test(stringValue)) {
-            errors[field.id] = field.patternMessage || `${field.label}格式不正确`;
-          }
-        } catch (e) {
-          console.error('正则表达式错误:', e);
-        }
-      }
-    });
-    setStartFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    const result = validateFormFields(selectedStartForm.fields, startFormData);
+    setStartFormErrors(result.errors || {});
+    return result.valid;
   };
 
   const doStartInstance = async () => {
@@ -368,7 +335,7 @@ function WorkflowEditor() {
       navigate(`/workflow/instance/${instanceId}`);
     } catch (error) {
       console.error('启动流程失败:', error);
-      setAlert('error', '启动失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '启动失败: ' + getErrorMessage(error));
     } finally {
       setStartingInstance(false);
     }

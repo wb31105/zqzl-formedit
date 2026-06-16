@@ -7,15 +7,15 @@ import PageError from '../components/PageError';
 import { useNotification } from '../context/NotificationContext';
 import usePaginatedList from '../hooks/usePaginatedList';
 import { validateFormFields } from '../utils/formValidation';
-import { APPROVAL_ACTION, APPROVAL_ACTION_LABEL, INSTANCE_STATUS, STATUS_LABEL } from '../constants/workflowConstants';
+import { STATUS_LABEL } from '../constants/workflowConstants';
 
 function WorkflowList() {
   const [activeTab, setActiveTab] = useState('definitions');
   const navigate = useNavigate();
   const { showConfirm, setAlert, clearAlert } = useNotification();
 
-  const definitionList = usePaginatedList({ fetchFunction: (params) => workflowDefinitionApi.getAllDefinitions(params), pageSize: 10 });
-  const instanceList = usePaginatedList({ fetchFunction: (params) => workflowInstanceApi.getAllInstances(params), pageSize: 10 });
+  const definitionList = usePaginatedList({ fetchFunction: workflowDefinitionApi.getAllDefinitions, pageSize: 10 });
+  const instanceList = usePaginatedList({ fetchFunction: workflowInstanceApi.getAllInstances, pageSize: 10 });
 
   useEffect(() => {
     return () => clearAlert();
@@ -28,14 +28,6 @@ function WorkflowList() {
   const [formData, setFormData] = useState({});
   const [formErrors, setFormErrors] = useState({});
   const [startingInstance, setStartingInstance] = useState(false);
-
-  useEffect(() => {
-    if (activeTab === 'definitions') {
-      definitionList.reload();
-    } else {
-      instanceList.reload();
-    }
-  }, [activeTab]);
 
   const handleDelete = async (id, e) => {
     e.stopPropagation();

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNotification } from '../context/NotificationContext';
 import { getErrorMessage } from '../services/api';
 
@@ -14,6 +14,11 @@ export default function usePaginatedList({ fetchFunction, pageSize = 10, searchP
   const [searchInputValue, setSearchInputValue] = useState('');
   const [loadError, setLoadError] = useState('');
 
+  const fetchFnRef = useRef(fetchFunction);
+  useEffect(() => {
+    fetchFnRef.current = fetchFunction;
+  }, [fetchFunction]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setLoadError('');
@@ -22,7 +27,7 @@ export default function usePaginatedList({ fetchFunction, pageSize = 10, searchP
       if (searchParamName && searchValue) {
         params[searchParamName] = searchValue;
       }
-      const response = await fetchFunction(params);
+      const response = await fetchFnRef.current(params);
       const data = response.data;
       setItems(data.content || []);
       setTotalPages(data.totalPages || 0);
@@ -33,7 +38,7 @@ export default function usePaginatedList({ fetchFunction, pageSize = 10, searchP
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, searchValue, searchParamName, fetchFunction]);
+  }, [page, pageSize, searchValue, searchParamName]);
 
   useEffect(() => {
     fetchData();

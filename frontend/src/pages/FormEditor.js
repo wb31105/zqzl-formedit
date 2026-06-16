@@ -4,7 +4,7 @@ import ControlLibrary from '../components/ControlLibrary';
 import PropertiesPanel from '../components/PropertiesPanel';
 import FieldRenderer from '../components/FieldRenderer';
 import { createField } from '../utils/fieldTypes';
-import { formApi } from '../services/api';
+import { formApi, getErrorMessage } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import PageError from '../components/PageError';
 
@@ -52,7 +52,7 @@ function FormEditor() {
       if (error.response?.status === 404) {
         msg = '表单不存在或已被删除';
       } else {
-        msg = '加载表单失败: ' + (error.response?.data?.error || error.message || '网络错误');
+        msg = '加载表单失败: ' + getErrorMessage(error, '网络错误');
       }
       setLoadError(msg);
     } finally {
@@ -140,7 +140,7 @@ function FormEditor() {
       setAlert('success', '保存成功', 3000);
     } catch (error) {
       console.error('保存失败:', error);
-      setAlert('error', '保存失败: ' + (error.response?.data?.error || error.message));
+      setAlert('error', '保存失败: ' + getErrorMessage(error));
     } finally {
       setSaving(false);
     }
