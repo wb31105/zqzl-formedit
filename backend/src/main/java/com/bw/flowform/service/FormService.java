@@ -2,10 +2,14 @@ package com.bw.flowform.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import static com.bw.flowform.utils.JsonUtils.*;
+import com.bw.flowform.common.ErrorCode;
+import com.bw.flowform.common.WorkflowConstants;
 import com.bw.flowform.dto.FormDto;
 import com.bw.flowform.dto.ValidationResult;
 import com.bw.flowform.entity.Form;
 import com.bw.flowform.entity.FormField;
+import com.bw.flowform.exception.BusinessException;
+import com.bw.flowform.exception.ResourceNotFoundException;
 import com.bw.flowform.repository.FormRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
@@ -42,9 +46,14 @@ public class FormService {
         return formRepository.findById(id);
     }
 
+    public Form getFormByIdOrThrow(Long id) {
+        return formRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.FORM_NOT_FOUND, "ID=" + id));
+    }
+
     public Form createForm(FormDto formDto) {
         if (formRepository.existsByName(formDto.getName())) {
-            throw new IllegalArgumentException("表单名称已存在: " + formDto.getName());
+            throw new BusinessException(ErrorCode.FORM_NAME_DUPLICATE, formDto.getName());
         }
         Form form = new Form();
         BeanUtils.copyProperties(formDto, form);
@@ -54,7 +63,7 @@ public class FormService {
 
     public Optional<Form> updateForm(Long id, FormDto formDto) {
         if (formRepository.existsByNameAndIdNot(formDto.getName(), id)) {
-            throw new IllegalArgumentException("表单名称已存在: " + formDto.getName());
+            throw new BusinessException(ErrorCode.FORM_NAME_DUPLICATE, formDto.getName());
         }
         return formRepository.findById(id).map(form -> {
             form.setName(formDto.getName());
@@ -64,12 +73,31 @@ public class FormService {
         });
     }
 
+    public Form updateFormOrThrow(Long id, FormDto formDto) {
+        if (formRepository.existsByNameAndIdNot(formDto.getName(), id)) {
+            throw new BusinessException(ErrorCode.FORM_NAME_DUPLICATE, formDto.getName());
+        }
+        Form form = formRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.FORM_NOT_FOUND, "ID=" + id));
+        form.setName(formDto.getName());
+        form.setDescription(formDto.getDescription());
+        form.setFieldsJson(convertFieldsToJson(formDto.getFields()));
+        return formRepository.save(form);
+    }
+
     public boolean deleteForm(Long id) {
         if (formRepository.existsById(id)) {
             formRepository.deleteById(id);
             return true;
         }
         return false;
+    }
+
+    public void deleteFormOrThrow(Long id) {
+        if (!formRepository.existsById(id)) {
+            throw new ResourceNotFoundException(ErrorCode.FORM_NOT_FOUND, "ID=" + id);
+        }
+        formRepository.deleteById(id);
     }
 
     public ValidationResult validateForm(Long formId, Map<String, Object> data) {
@@ -113,8 +141,7 @@ public class FormService {
             return;
         }
 
-        boolean isTextLike = "text".equals(field.getType()) || "textarea".equals(field.getType())
-                || "email".equals(field.getType()) || "number".equals(field.getType());
+        boolean isTextLike = WorkflowConstants.isTextFieldType(field.getType());
 
         if (isTextLike && field.getMinLength() != null && stringValue.length() < field.getMinLength()) {
             errors.put(fieldId, field.getLabel() + "最少需要" + field.getMinLength() + "个字符");

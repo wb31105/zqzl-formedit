@@ -6,6 +6,8 @@ import com.bw.flowform.dto.WorkflowValidationResult;
 import com.bw.flowform.entity.FormField;
 import com.bw.flowform.enums.BranchType;
 import com.bw.flowform.enums.NodeType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -14,6 +16,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class WorkflowValidationService {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkflowValidationService.class);
 
     private final FormService formService;
 
@@ -94,6 +98,8 @@ public class WorkflowValidationService {
                             + "（请检查字段ID是否正确，或先绑定正确的表单）");
                 }
             } catch (Exception e) {
+                log.warn("解析条件节点 \"{}\" 的表达式变量提取失败: {}", node.getName(), e.getMessage());
+                result.addError("条件节点 \"" + node.getName() + "\" 的表达式解析失败: " + e.getMessage());
             }
         }
     }

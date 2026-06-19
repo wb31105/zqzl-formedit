@@ -2,6 +2,7 @@ package com.bw.flowform.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import static com.bw.flowform.utils.JsonUtils.*;
+import com.bw.flowform.common.ErrorCode;
 import com.bw.flowform.dto.FormDto;
 import com.bw.flowform.dto.FormResponse;
 import com.bw.flowform.dto.PageResponse;
@@ -9,11 +10,11 @@ import com.bw.flowform.dto.ValidationRequest;
 import com.bw.flowform.dto.ValidationResult;
 import com.bw.flowform.entity.Form;
 import com.bw.flowform.entity.FormField;
+import com.bw.flowform.exception.ResourceNotFoundException;
 import com.bw.flowform.service.FormService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
@@ -48,10 +49,10 @@ public class FormController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<FormResponse> getFormById(@PathVariable Long id) {
-        return formService.getFormById(id)
-                .map(form -> ResponseEntity.ok(convertToResponse(form)))
-                .orElse(ResponseEntity.notFound().build());
+    public FormResponse getFormById(@PathVariable Long id) {
+        Form form = formService.getFormById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.FORM_NOT_FOUND, "ID=" + id));
+        return convertToResponse(form);
     }
 
     @PostMapping
@@ -61,18 +62,14 @@ public class FormController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<FormResponse> updateForm(@PathVariable Long id, @Valid @RequestBody FormDto formDto) {
-        return formService.updateForm(id, formDto)
-                .map(form -> ResponseEntity.ok(convertToResponse(form)))
-                .orElse(ResponseEntity.notFound().build());
+    public FormResponse updateForm(@PathVariable Long id, @Valid @RequestBody FormDto formDto) {
+        Form form = formService.updateFormOrThrow(id, formDto);
+        return convertToResponse(form);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteForm(@PathVariable Long id) {
-        if (formService.deleteForm(id)) {
-            return ResponseEntity.ok().build();
-        }
-        return ResponseEntity.notFound().build();
+    public void deleteForm(@PathVariable Long id) {
+        formService.deleteFormOrThrow(id);
     }
 
     @PostMapping("/validate")

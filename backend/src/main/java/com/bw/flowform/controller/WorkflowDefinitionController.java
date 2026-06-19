@@ -1,14 +1,15 @@
 package com.bw.flowform.controller;
 
+import com.bw.flowform.common.ErrorCode;
 import com.bw.flowform.dto.PageResponse;
 import com.bw.flowform.dto.WorkflowDefinitionDto;
 import com.bw.flowform.dto.WorkflowValidationResult;
 import com.bw.flowform.entity.WorkflowDefinition;
+import com.bw.flowform.exception.ResourceNotFoundException;
 import com.bw.flowform.service.WorkflowDefinitionService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
@@ -36,45 +37,29 @@ public class WorkflowDefinitionController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<WorkflowDefinitionDto> getDefinitionById(@PathVariable Long id) {
+    public WorkflowDefinitionDto getDefinitionById(@PathVariable Long id) {
         WorkflowDefinitionDto dto = definitionService.getDefinitionDtoById(id);
-        if (dto != null) {
-            return ResponseEntity.ok(dto);
+        if (dto == null) {
+            throw new ResourceNotFoundException(ErrorCode.WORKFLOW_DEFINITION_NOT_FOUND, "ID=" + id);
         }
-        return ResponseEntity.notFound().build();
+        return dto;
     }
 
     @PostMapping
-    public ResponseEntity<?> createDefinition(@Valid @RequestBody WorkflowDefinitionDto dto) {
-        try {
-            WorkflowDefinition definition = definitionService.createDefinition(dto);
-            return ResponseEntity.ok(convertToResponse(definition));
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
-        }
+    public Map<String, Object> createDefinition(@Valid @RequestBody WorkflowDefinitionDto dto) {
+        WorkflowDefinition definition = definitionService.createDefinition(dto);
+        return convertToResponse(definition);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateDefinition(@PathVariable Long id, @Valid @RequestBody WorkflowDefinitionDto dto) {
-        try {
-            return definitionService.updateDefinition(id, dto)
-                    .map(definition -> ResponseEntity.ok(convertToResponse(definition)))
-                    .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
-        }
+    public Map<String, Object> updateDefinition(@PathVariable Long id, @Valid @RequestBody WorkflowDefinitionDto dto) {
+        WorkflowDefinition definition = definitionService.updateDefinitionOrThrow(id, dto);
+        return convertToResponse(definition);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteDefinition(@PathVariable Long id) {
-        if (definitionService.deleteDefinition(id)) {
-            return ResponseEntity.ok().build();
-        }
-        return ResponseEntity.notFound().build();
+    public void deleteDefinition(@PathVariable Long id) {
+        definitionService.deleteDefinitionOrThrow(id);
     }
 
     @PostMapping("/validate")

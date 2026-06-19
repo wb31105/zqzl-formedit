@@ -3,8 +3,14 @@ package com.bw.flowform.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import static com.bw.flowform.utils.JsonUtils.*;
 import com.bw.flowform.common.NodeProperties;
+import com.bw.flowform.common.ErrorCode;
+import com.bw.flowform.common.WorkflowConstants;
 import com.bw.flowform.dto.ValidationResult;
 import com.bw.flowform.dto.WorkflowDefinitionDto;
+import com.bw.flowform.engine.NodeHandler;
+import com.bw.flowform.engine.NodeHandlerContext;
+import com.bw.flowform.engine.NodeHandlerRegistry;
+import com.bw.flowform.engine.NodeHandlerResult;
 import com.bw.flowform.entity.Form;
 import com.bw.flowform.entity.WorkflowExecutionLog;
 import com.bw.flowform.entity.WorkflowInstance;
@@ -15,6 +21,8 @@ import com.bw.flowform.enums.CountersignType;
 import com.bw.flowform.enums.InstanceStatus;
 import com.bw.flowform.enums.NodeType;
 import com.bw.flowform.enums.TaskStatus;
+import com.bw.flowform.exception.BusinessException;
+import com.bw.flowform.exception.ResourceNotFoundException;
 import com.bw.flowform.repository.FormRepository;
 import com.bw.flowform.repository.WorkflowExecutionLogRepository;
 import com.bw.flowform.repository.WorkflowInstanceRepository;
@@ -56,19 +64,22 @@ public class WorkflowInstanceService {
     private final WorkflowDefinitionService definitionService;
     private final FormRepository formRepository;
     private final FormService formService;
+    private final NodeHandlerRegistry nodeHandlerRegistry;
 
     public WorkflowInstanceService(WorkflowInstanceRepository instanceRepository,
                                     WorkflowTaskRepository taskRepository,
                                     WorkflowExecutionLogRepository executionLogRepository,
                                     WorkflowDefinitionService definitionService,
                                     FormRepository formRepository,
-                                    FormService formService) {
+                                    FormService formService,
+                                    NodeHandlerRegistry nodeHandlerRegistry) {
         this.instanceRepository = instanceRepository;
         this.taskRepository = taskRepository;
         this.executionLogRepository = executionLogRepository;
         this.definitionService = definitionService;
         this.formRepository = formRepository;
         this.formService = formService;
+        this.nodeHandlerRegistry = nodeHandlerRegistry;
     }
 
     public Page<WorkflowInstance> getAllInstances(Pageable pageable) {
@@ -81,6 +92,11 @@ public class WorkflowInstanceService {
 
     public Optional<WorkflowInstance> getInstanceById(Long id) {
         return instanceRepository.findById(id);
+    }
+
+    public WorkflowInstance getInstanceByIdOrThrow(Long id) {
+        return instanceRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.WORKFLOW_INSTANCE_NOT_FOUND, "ID=" + id));
     }
 
     public List<WorkflowExecutionLog> getExecutionLogs(Long instanceId) {
@@ -104,20 +120,20 @@ public class WorkflowInstanceService {
     public WorkflowInstance startInstance(Long definitionId, Long formId, Map<String, Object> formData) {
         WorkflowDefinitionDto definition = definitionService.getDefinitionDtoById(definitionId);
         if (definition == null) {
-            throw new IllegalArgumentException("流程定义不存在");
+            throw new ResourceNotFoundException(ErrorCode.WORKFLOW_DEFINITION_NOT_FOUND, "ID=" + definitionId);
         }
 
         Long boundFormId = definition.getFormId();
 
         if (formId != null) {
             if (boundFormId == null) {
-                throw new IllegalArgumentException("该流程未绑定表单，启动时不能传入formId");
+                throw new BusinessException(ErrorCode.INVALID_START_PARAMS, "该流程未绑定表单，启动时不能传入formId");
             }
             if (!formId.equals(boundFormId)) {
-                throw new IllegalArgumentException("传入的formId与流程定义绑定的表单不匹配");
+                throw new BusinessException(ErrorCode.INVALID_START_PARAMS, "传入的formId与流程定义绑定的表单不匹配");
             }
         } else if (boundFormId != null) {
-            throw new IllegalArgumentException("该流程已绑定表单，启动时必须传入formId");
+            throw new BusinessException(ErrorCode.INVALID_START_PARAMS, "该流程已绑定表单，启动时必须传入formId");
         }
 
         WorkflowInstance instance = new WorkflowInstance();
@@ -127,16 +143,16 @@ public class WorkflowInstanceService {
 
         if (formId != null) {
             Form form = formRepository.findById(formId)
-                    .orElseThrow(() -> new IllegalArgumentException("表单不存在"));
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.FORM_NOT_FOUND, "ID=" + formId));
             instance.setFormId(formId);
             instance.setFormName(form.getName());
             if (formData == null) {
-                throw new IllegalArgumentException("该流程绑定了表单，启动时必须传入formData");
+                throw new BusinessException(ErrorCode.INVALID_START_PARAMS, "该流程绑定了表单，启动时必须传入formData");
             }
             ValidationResult validationResult = formService.validateForm(formId, formData);
             if (!validationResult.isValid()) {
                 String errorMsg = "表单验证失败: " + String.join(", ", validationResult.getErrors().values());
-                throw new IllegalArgumentException(errorMsg);
+                throw new BusinessException(ErrorCode.FORM_VALIDATION_FAILED, errorMsg);
             }
             instance.setFormDataJson(convertFormDataToJson(formData));
         }
@@ -148,7 +164,7 @@ public class WorkflowInstanceService {
         WorkflowDefinitionDto.Node startNode = definition.getNodes().stream()
                 .filter(n -> NodeType.START.getCode().equals(n.getType()))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("流程没有开始节点"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.WORKFLOW_VALIDATION_FAILED, "流程没有开始节点"));
 
         addExecutionLog(instance.getId(), startNode.getId(), startNode.getName(), startNode.getType(), "进入节点", null);
 
@@ -159,22 +175,21 @@ public class WorkflowInstanceService {
 
     @Transactional
     public WorkflowInstance completeTask(Long instanceId, Long taskId, String action, String comment, String assignee) {
-        WorkflowInstance instance = instanceRepository.findById(instanceId)
-                .orElseThrow(() -> new IllegalArgumentException("流程实例不存在"));
+        WorkflowInstance instance = getInstanceByIdOrThrow(instanceId);
 
         if (!InstanceStatus.RUNNING.getCode().equals(instance.getStatus())) {
-            throw new IllegalStateException("流程实例不是运行状态");
+            throw new BusinessException(ErrorCode.INSTANCE_NOT_RUNNING);
         }
 
         WorkflowTask task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("任务不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.TASK_NOT_FOUND, "ID=" + taskId));
 
         if (!task.getInstanceId().equals(instanceId)) {
-            throw new IllegalArgumentException("任务不属于该流程实例");
+            throw new BusinessException(ErrorCode.TASK_NOT_BELONG_TO_INSTANCE);
         }
 
         if (!TaskStatus.PENDING.getCode().equals(task.getStatus())) {
-            throw new IllegalStateException("任务不是待处理状态");
+            throw new BusinessException(ErrorCode.TASK_NOT_PENDING);
         }
 
         task.setStatus(TaskStatus.COMPLETED.getCode());
@@ -189,7 +204,7 @@ public class WorkflowInstanceService {
         WorkflowDefinitionDto.Node currentNode = definition.getNodes().stream()
                 .filter(n -> n.getId().equals(task.getNodeId()))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("节点不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NODE_NOT_FOUND, "ID=" + task.getNodeId()));
 
         if (NodeType.COUNTERSIGN.getCode().equals(currentNode.getType())) {
             String actionDisplay = ApprovalAction.APPROVE.getCode().equals(action) ? "批准" : "拒绝";
@@ -344,7 +359,7 @@ public class WorkflowInstanceService {
         WorkflowDefinitionDto.Node nextNode = definition.getNodes().stream()
                 .filter(n -> n.getId().equals(nextEdge.getTarget()))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("目标节点不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NODE_NOT_FOUND, "ID=" + nextEdge.getTarget()));
 
         instance.setCurrentNodeId(nextNode.getId());
         instance.setCurrentNodeName(nextNode.getName());
@@ -507,83 +522,21 @@ public class WorkflowInstanceService {
             return;
         }
         NodeType nodeType = NodeType.fromCode(node.getType());
-        if (nodeType == null) {
+        if (nodeType == null || !nodeHandlerRegistry.hasHandler(nodeType)) {
             proceedToNextNode(instance, definition, node);
             return;
         }
-        switch (nodeType) {
-            case END:
-                instance.setStatus(InstanceStatus.COMPLETED.getCode());
-                instance.setCurrentNodeId(null);
-                instance.setCurrentNodeName(null);
-                instance.setEndedAt(LocalDateTime.now());
-                instanceRepository.save(instance);
-                addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(), "流程结束", null);
-                break;
 
-            case APPROVAL:
-                WorkflowTask task = new WorkflowTask();
-                task.setInstanceId(instance.getId());
-                task.setNodeId(node.getId());
-                task.setNodeName(node.getName());
-                task.setStatus(TaskStatus.PENDING.getCode());
-                String approver = NodeProperties.getApprover(node.getProperties());
-                if (approver != null) {
-                    task.setAssignee(approver);
-                }
-                taskRepository.save(task);
-                addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(), "等待审批", null);
-                break;
+        NodeHandler handler = nodeHandlerRegistry.getHandler(nodeType);
+        NodeHandlerContext context = new NodeHandlerContext(instance, definition, node);
+        NodeHandlerResult result = handler.handle(context);
 
-            case COUNTERSIGN:
-                Map<String, Object> countersignProps = node.getProperties();
-                List<String> approvers = NodeProperties.getApprovers(countersignProps);
-                if (approvers.isEmpty()) {
-                    approvers.add("审批人1");
-                    approvers.add("审批人2");
-                }
-                for (String approverItem : approvers) {
-                    WorkflowTask csTask = new WorkflowTask();
-                    csTask.setInstanceId(instance.getId());
-                    csTask.setNodeId(node.getId());
-                    csTask.setNodeName(node.getName());
-                    csTask.setStatus(TaskStatus.PENDING.getCode());
-                    csTask.setAssignee(approverItem);
-                    taskRepository.save(csTask);
-                }
-                String countersignTypeCode = NodeProperties.getCountersignType(countersignProps);
-                CountersignType csType = CountersignType.fromCode(countersignTypeCode);
-                String typeDesc = csType != null ? csType.getDescription() : CountersignType.ALL.getDescription();
-                addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(),
-                        "等待会签", "审批人: " + String.join(", ", approvers) + "，规则: " + typeDesc);
-                break;
+        if (result.isCompleted()) {
+            return;
+        }
 
-            case AUTO:
-                addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(), "执行自动任务", null);
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(), "自动任务完成", null);
-                proceedToNextNode(instance, definition, node);
-                break;
-
-            case CONDITION:
-                addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(), "条件判断", null);
-                String conditionAction = resolveConditionExpression(node, instance);
-                if (conditionAction == null) {
-                    return;
-                }
-                String conditionDisplay = ApprovalAction.APPROVE.getCode().equals(conditionAction) ? "是" : "否";
-                addExecutionLog(instance.getId(), node.getId(), node.getName(), node.getType(),
-                        conditionAction, "条件判断结果: " + conditionDisplay);
-                proceedToNextNode(instance, definition, node, conditionAction);
-                break;
-
-            default:
-                proceedToNextNode(instance, definition, node);
-                break;
+        if (result.isShouldProceed()) {
+            proceedToNextNode(instance, definition, node, result.getLastAction());
         }
     }
 
@@ -608,6 +561,16 @@ public class WorkflowInstanceService {
             return true;
         }
         return false;
+    }
+
+    @Transactional
+    public void deleteInstanceOrThrow(Long id) {
+        if (!instanceRepository.existsById(id)) {
+            throw new ResourceNotFoundException(ErrorCode.WORKFLOW_INSTANCE_NOT_FOUND, "ID=" + id);
+        }
+        executionLogRepository.deleteAll(executionLogRepository.findByInstanceIdOrderByIdAsc(id));
+        taskRepository.deleteAll(taskRepository.findByInstanceIdOrderByIdAsc(id));
+        instanceRepository.deleteById(id);
     }
 
     public Map<String, Object> getInstanceFormData(Long instanceId) {

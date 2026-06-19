@@ -2,10 +2,13 @@ package com.bw.flowform.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import static com.bw.flowform.utils.JsonUtils.*;
+import com.bw.flowform.common.ErrorCode;
 import com.bw.flowform.dto.WorkflowDefinitionDto;
 import com.bw.flowform.dto.WorkflowValidationResult;
 import com.bw.flowform.entity.Form;
 import com.bw.flowform.entity.WorkflowDefinition;
+import com.bw.flowform.exception.BusinessException;
+import com.bw.flowform.exception.ResourceNotFoundException;
 import com.bw.flowform.repository.FormRepository;
 import com.bw.flowform.repository.WorkflowDefinitionRepository;
 import org.springframework.beans.BeanUtils;
@@ -40,21 +43,32 @@ public class WorkflowDefinitionService {
         return definitionRepository.findById(id);
     }
 
+    public WorkflowDefinition getDefinitionByIdOrThrow(Long id) {
+        return definitionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.WORKFLOW_DEFINITION_NOT_FOUND, "ID=" + id));
+    }
+
     public WorkflowDefinitionDto getDefinitionDtoById(Long id) {
         return definitionRepository.findById(id)
                 .map(this::convertToDto)
                 .orElse(null);
     }
 
+    public WorkflowDefinitionDto getDefinitionDtoByIdOrThrow(Long id) {
+        WorkflowDefinition definition = getDefinitionByIdOrThrow(id);
+        return convertToDto(definition);
+    }
+
     @Transactional
     public WorkflowDefinition createDefinition(WorkflowDefinitionDto dto) {
         WorkflowValidationResult validation = validationService.validateWorkflow(dto);
         if (!validation.isValid()) {
-            throw new IllegalArgumentException("流程验证失败: " + String.join("; ", validation.getErrors()));
+            throw new BusinessException(ErrorCode.WORKFLOW_VALIDATION_FAILED,
+                    String.join("; ", validation.getErrors()));
         }
 
         if (definitionRepository.existsByName(dto.getName())) {
-            throw new IllegalArgumentException("流程名称已存在: " + dto.getName());
+            throw new BusinessException(ErrorCode.WORKFLOW_NAME_DUPLICATE, dto.getName());
         }
 
         WorkflowDefinition definition = new WorkflowDefinition();
@@ -74,11 +88,12 @@ public class WorkflowDefinitionService {
     public Optional<WorkflowDefinition> updateDefinition(Long id, WorkflowDefinitionDto dto) {
         WorkflowValidationResult validation = validationService.validateWorkflow(dto);
         if (!validation.isValid()) {
-            throw new IllegalArgumentException("流程验证失败: " + String.join("; ", validation.getErrors()));
+            throw new BusinessException(ErrorCode.WORKFLOW_VALIDATION_FAILED,
+                    String.join("; ", validation.getErrors()));
         }
 
         if (definitionRepository.existsByNameAndIdNot(dto.getName(), id)) {
-            throw new IllegalArgumentException("流程名称已存在: " + dto.getName());
+            throw new BusinessException(ErrorCode.WORKFLOW_NAME_DUPLICATE, dto.getName());
         }
 
         return definitionRepository.findById(id).map(definition -> {
@@ -98,12 +113,47 @@ public class WorkflowDefinitionService {
     }
 
     @Transactional
+    public WorkflowDefinition updateDefinitionOrThrow(Long id, WorkflowDefinitionDto dto) {
+        WorkflowValidationResult validation = validationService.validateWorkflow(dto);
+        if (!validation.isValid()) {
+            throw new BusinessException(ErrorCode.WORKFLOW_VALIDATION_FAILED,
+                    String.join("; ", validation.getErrors()));
+        }
+
+        if (definitionRepository.existsByNameAndIdNot(dto.getName(), id)) {
+            throw new BusinessException(ErrorCode.WORKFLOW_NAME_DUPLICATE, dto.getName());
+        }
+
+        WorkflowDefinition definition = getDefinitionByIdOrThrow(id);
+        definition.setName(dto.getName());
+        definition.setDescription(dto.getDescription());
+        definition.setNodesJson(convertToJson(dto.getNodes()));
+        definition.setEdgesJson(convertToJson(dto.getEdges()));
+        definition.setFormId(dto.getFormId());
+        if (dto.getFormId() != null) {
+            Form form = formRepository.findById(dto.getFormId()).orElse(null);
+            definition.setFormName(form != null ? form.getName() : null);
+        } else {
+            definition.setFormName(null);
+        }
+        return definitionRepository.save(definition);
+    }
+
+    @Transactional
     public boolean deleteDefinition(Long id) {
         if (definitionRepository.existsById(id)) {
             definitionRepository.deleteById(id);
             return true;
         }
         return false;
+    }
+
+    @Transactional
+    public void deleteDefinitionOrThrow(Long id) {
+        if (!definitionRepository.existsById(id)) {
+            throw new ResourceNotFoundException(ErrorCode.WORKFLOW_DEFINITION_NOT_FOUND, "ID=" + id);
+        }
+        definitionRepository.deleteById(id);
     }
 
     public WorkflowValidationResult validateDefinition(WorkflowDefinitionDto dto) {

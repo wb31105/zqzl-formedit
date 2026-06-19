@@ -2,17 +2,18 @@ package com.bw.flowform.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import static com.bw.flowform.utils.JsonUtils.*;
+import com.bw.flowform.common.ErrorCode;
 import com.bw.flowform.dto.PageResponse;
 import com.bw.flowform.dto.StartInstanceRequest;
 import com.bw.flowform.dto.WorkflowTaskDto;
 import com.bw.flowform.entity.WorkflowExecutionLog;
 import com.bw.flowform.entity.WorkflowInstance;
 import com.bw.flowform.entity.WorkflowTask;
+import com.bw.flowform.exception.ResourceNotFoundException;
 import com.bw.flowform.service.WorkflowInstanceService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
@@ -48,93 +49,72 @@ public class WorkflowInstanceController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> getInstanceById(@PathVariable Long id) {
-        return instanceService.getInstanceById(id)
-                .map(instance -> ResponseEntity.ok(convertToDetailResponse(instance)))
-                .orElse(ResponseEntity.notFound().build());
+    public Map<String, Object> getInstanceById(@PathVariable Long id) {
+        WorkflowInstance instance = instanceService.getInstanceById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.WORKFLOW_INSTANCE_NOT_FOUND, "ID=" + id));
+        return convertToDetailResponse(instance);
     }
 
     @GetMapping("/{id}/logs")
-    public ResponseEntity<List<WorkflowExecutionLog>> getExecutionLogs(@PathVariable Long id) {
+    public List<WorkflowExecutionLog> getExecutionLogs(@PathVariable Long id) {
         if (!instanceService.getInstanceById(id).isPresent()) {
-            return ResponseEntity.notFound().build();
+            throw new ResourceNotFoundException(ErrorCode.WORKFLOW_INSTANCE_NOT_FOUND, "ID=" + id);
         }
-        return ResponseEntity.ok(instanceService.getExecutionLogs(id));
+        return instanceService.getExecutionLogs(id);
     }
 
     @GetMapping("/{id}/tasks")
-    public ResponseEntity<List<WorkflowTask>> getInstanceTasks(@PathVariable Long id) {
+    public List<WorkflowTask> getInstanceTasks(@PathVariable Long id) {
         if (!instanceService.getInstanceById(id).isPresent()) {
-            return ResponseEntity.notFound().build();
+            throw new ResourceNotFoundException(ErrorCode.WORKFLOW_INSTANCE_NOT_FOUND, "ID=" + id);
         }
-        return ResponseEntity.ok(instanceService.getInstanceTasks(id));
+        return instanceService.getInstanceTasks(id);
     }
 
     @GetMapping("/{id}/pending-tasks")
-    public ResponseEntity<List<WorkflowTask>> getPendingTasks(@PathVariable Long id) {
+    public List<WorkflowTask> getPendingTasks(@PathVariable Long id) {
         if (!instanceService.getInstanceById(id).isPresent()) {
-            return ResponseEntity.notFound().build();
+            throw new ResourceNotFoundException(ErrorCode.WORKFLOW_INSTANCE_NOT_FOUND, "ID=" + id);
         }
-        return ResponseEntity.ok(instanceService.getPendingTasks(id));
+        return instanceService.getPendingTasks(id);
     }
 
     @PostMapping("/start/{definitionId}")
-    public ResponseEntity<?> startInstance(@PathVariable Long definitionId) {
-        try {
-            WorkflowInstance instance = instanceService.startInstance(definitionId);
-            return ResponseEntity.ok(convertToDetailResponse(instance));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
-        }
+    public Map<String, Object> startInstance(@PathVariable Long definitionId) {
+        WorkflowInstance instance = instanceService.startInstance(definitionId);
+        return convertToDetailResponse(instance);
     }
 
     @PostMapping("/start-with-form/{definitionId}")
-    public ResponseEntity<?> startInstanceWithForm(@PathVariable Long definitionId,
-                                                    @Valid @RequestBody(required = false) StartInstanceRequest request) {
-        try {
-            Long formId = null;
-            Map<String, Object> formData = null;
-            if (request != null) {
-                formId = request.getFormId();
-                formData = request.getFormData();
-            }
-            WorkflowInstance instance = instanceService.startInstance(definitionId, formId, formData);
-            return ResponseEntity.ok(convertToDetailResponse(instance));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
+    public Map<String, Object> startInstanceWithForm(@PathVariable Long definitionId,
+                                                      @Valid @RequestBody(required = false) StartInstanceRequest request) {
+        Long formId = null;
+        Map<String, Object> formData = null;
+        if (request != null) {
+            formId = request.getFormId();
+            formData = request.getFormData();
         }
+        WorkflowInstance instance = instanceService.startInstance(definitionId, formId, formData);
+        return convertToDetailResponse(instance);
     }
 
     @PostMapping("/{instanceId}/complete-task")
-    public ResponseEntity<?> completeTask(
+    public Map<String, Object> completeTask(
             @PathVariable Long instanceId,
             @Valid @RequestBody WorkflowTaskDto taskDto) {
-        try {
-            WorkflowInstance instance = instanceService.completeTask(
-                    instanceId,
-                    taskDto.getTaskId(),
-                    taskDto.getAction(),
-                    taskDto.getComment(),
-                    taskDto.getAssignee()
-            );
-            return ResponseEntity.ok(convertToDetailResponse(instance));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
-        }
+        WorkflowInstance instance = instanceService.completeTask(
+                instanceId,
+                taskDto.getTaskId(),
+                taskDto.getAction(),
+                taskDto.getComment(),
+                taskDto.getAssignee()
+        );
+        return convertToDetailResponse(instance);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteInstance(@PathVariable Long id) {
-        if (instanceService.deleteInstance(id)) {
-            return ResponseEntity.ok().build();
-        }
-        return ResponseEntity.notFound().build();
+    public void deleteInstance(@PathVariable Long id) {
+        instanceService.deleteInstanceOrThrow(id);
     }
 
     private PageResponse<Map<String, Object>> convertToPageResponse(Page<WorkflowInstance> page) {
